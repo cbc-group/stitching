@@ -19,6 +19,7 @@ setup(
         "imageio",
         "numpy",
         "pandas",
+        "pyyaml",
         "scipy",
         "xarray",
         "zarr",
