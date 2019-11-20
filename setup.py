@@ -21,6 +21,7 @@ setup(
         "pandas",
         "pyyaml",
         "scipy",
+        "tqdm",
         "xarray",
         "zarr",
     ],

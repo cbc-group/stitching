@@ -68,13 +68,25 @@ def read_settings(data_dir):
     setting_path = file_list[0]
 
     # parse image size
+    image_shape, binning = None, None
     with open(setting_path, "r") as fd:
         for line in fd:
             matches = re.match(r"# of Pixels :\s+X=(\d+) Y=(\d+)", line)
-            if matches is None:
-                continue
-            # we know z will only have 1 layer
-            return 1, matches.group(2), matches.group(1)
+            if matches is not None:
+                # NOTE we know z will only have 1 layer
+                image_shape = int(matches.group(2)), int(matches.group(1))
+
+            matches = re.match(r"Binning :\s+X=(\d+) Y=(\d+)", line)
+            if matches is not None:
+                # NOTE we know z will only have 1 layer
+                binning = int(matches.group(2)), int(matches.group(1))
+
+    # recalibrate to actual size
+    image_shape = tuple(s // b for s, b in zip(image_shape, binning))
+
+    # force to 3D
+    # NOTE parse upper section for z info
+    return (1,) + image_shape
 
 
 if __name__ == "__main__":
