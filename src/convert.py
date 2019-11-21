@@ -52,6 +52,7 @@ def main(data_dir, script_path):
         # convert to global position
         head = tuple(i * a for i, a in zip(index, data_shape))
         tail = tuple((i + 1) * a for i, a in zip(index, data_shape))
+        print(f'head: {head}, tail: {tail}')
         # zip to slice
         selection = tuple(slice(h, t) for h, t in zip(head, tail))
         array[selection] = data[np.newaxis, ...]
@@ -70,8 +71,8 @@ if __name__ == "__main__":
         level="DEBUG", fmt="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S"
     )
 
-    root = find_dataset_dir("trial_4")
-    data_dir = os.path.join(root, "trial_4")
-    script_path = os.path.join(root, "volume.csv")
+    root = find_dataset_dir("trial_7")
+    data_dir = root
+    script_path = os.path.join(root, "script.csv")
 
     main(data_dir, script_path)

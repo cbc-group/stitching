@@ -46,12 +46,24 @@ def filename_to_tile(data_dir, script_path):
     """
     file_list = glob.glob(os.path.join(data_dir, "*.tif"))
     file_list.sort()
+    
+    # determine if we need to skip multiple rows
+    with open(script_path, 'r') as fd:
+        offset = -1
+        for lineno, line in enumerate(fd):
+            if line.startswith('----Stack scan order----'):
+                offset = lineno
+                break
+        else:
+            # summary section contains 2 lines
+            offset = 2
+    logger.info(f'offset lines: {offset}')
 
     # actual position
-    df = pd.read_csv(script_path, skiprows=2)
+    df = pd.read_csv(script_path, skiprows=offset)
     # ... only keep index
     df = df[[f"Stack {ax}" for ax in ("Z", "Y", "X")]]
-
+    
     return {fname: tuple(row) for fname, row in zip(file_list, df.values)}
 
 
