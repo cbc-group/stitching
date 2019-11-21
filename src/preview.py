@@ -41,8 +41,8 @@ if __name__ == "__main__":
         level="DEBUG", fmt="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S"
     )
 
-    root = find_dataset_dir("trial_4")
-    zarr_path = os.path.join(root, "trial_4.zarr")
-    script_path = os.path.join(root, "volume.csv")
+    root = find_dataset_dir("trial_7")
+    zarr_path = find_dataset_dir("trial_7.zarr")
+    script_path = os.path.join(root, "script.csv")
 
     preview_layers(zarr_path)
