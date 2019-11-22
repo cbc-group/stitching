@@ -4,6 +4,7 @@ import os
 import re
 
 import pandas as pd
+from re import X
 
 __all__ = ["filename_to_tile", "read_script", "read_settings"]
 
@@ -64,6 +65,10 @@ def filename_to_tile(data_dir, script_path):
     # ... only keep index
     df = df[[f"Stack {ax}" for ax in ("Z", "Y", "X")]]
     
+    # NOTE compensate
+    nx = df['Stack X'].max()
+    df['Stack X'] = nx - df['Stack X']
+
     return {fname: tuple(row) for fname, row in zip(file_list, df.values)}
 
 
@@ -110,7 +115,7 @@ if __name__ == "__main__":
         level="DEBUG", fmt="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S"
     )
 
-    path = find_dataset_dir("trial_4")
+    path = find_dataset_dir("trial_7")
     path = os.path.join(path, "volume.csv")
     print(path)
     print(read_script(path))
