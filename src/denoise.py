@@ -109,4 +109,4 @@ if __name__ == "__main__":
     dst_dir = f"{dst_dir}_denoise"
     model_dir = f"{dst_dir}_model"
 
-    run(file_list, train_on="2.tif")
+    run(file_list, train_on=file_list[1]) # 2.tif
