@@ -25,9 +25,10 @@ def train(
     # create data generator object
     datagen = N2V_DataGenerator()
 
+    # patch additional axes
     image = image[np.newaxis, ..., np.newaxis]
 
-    patches = datagen.generate_patches_from_list(image, shape=patch_shape)
+    patches = datagen.generate_patches_from_list([image], shape=patch_shape)
     logger.info(f"patch shape: {patches.shape}")
     n_patches = patches.shape[0]
     logger.info(f"{n_patches} patches generated")
@@ -109,4 +110,4 @@ if __name__ == "__main__":
     dst_dir = f"{dst_dir}_denoise"
     model_dir = f"{dst_dir}_model"
 
-    run(file_list, train_on=file_list[1]) # 2.tif
+    run(file_list, train_on=file_list[1])  # 2.tif
