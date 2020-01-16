@@ -1,11 +1,11 @@
 import logging
-import os
 
 import click
 import coloredlogs
 import dask.array as da
 from dask.distributed import Client, progress
 import imageio
+from utoolbox.cli.prompt import prompt_options
 from utoolbox.io.dataset import LatticeScopeTiledDataset
 
 __all__ = ["preview"]
@@ -35,7 +35,7 @@ def preview_midplane(ds):
     """Preview midplane in the global coordinate."""
     z = ds.index.get_level_values("tile_z").unique().values
     cz = z[len(z) // 2]
-    logger.info(f"mid z @ {cz}")
+    logger.info(f"x mid-plane @ {cz}")
 
     # select the tiles
     tiles = ds.iloc[ds.index.get_level_values("tile_z") == cz]
@@ -45,7 +45,8 @@ def preview_midplane(ds):
         row = []
         for x, tile in tile_x.groupby("tile_x"):
             data = ds[tile]
-            data = data[data.shape[0] // 2, ...]  # mid plane of the stack
+            if len(data.shape) > 2:
+                data = data[data.shape[0] // 2, ...]  # mid plane of the stack
             row.append(data)
         layer.append(row)
     preview = da.block(layer)
@@ -86,9 +87,21 @@ def main(method, src_dir, dst_path, remap, flip, host):
     )
     logger.info(f"tiling dimension ({', '.join(desc)})")
 
+    views = src_ds.index.get_level_values("view").unique().values
+    if len(views) > 0:
+        view = prompt_options("Please select a view: ", views)
+        src_ds.drop(
+            src_ds.iloc[src_ds.index.get_level_values("view") != view].index,
+            inplace=True,
+        )
+        logger.debug(f'found multiple views, using "{view}"')
+
+    print(src_ds.inventory)
+
     # create directives
     action = {"mip": preview_mip, "midplane": preview_midplane}[method]
     preview = action(src_ds)
+    logger.info(f"preview result {preview.shape}, {preview.dtype}")
 
     # execute on cluster
     logger.info("generating preview...")
@@ -97,7 +110,7 @@ def main(method, src_dir, dst_path, remap, flip, host):
     # retrieve
     preview = preview.compute()
 
-    logger.info(f'saving preivew ({preview.shape}, {preview.dtype}) to "{dst_path}"')
+    logger.info(f'saving preivew to "{dst_path}"')
     try:
         imageio.volwrite(dst_path, preview)
     except ValueError:
