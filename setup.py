@@ -22,10 +22,11 @@ setup(
         "pyyaml",
         "scipy",
         "tqdm",
+        "utoolbox",
         "xarray",
         "zarr",
     ],
     zip_safe=True,
     extras_require={},
-    entry_points={"console_scripts": []},
+    entry_points={"console_scripts": ["preview=preview:main"]},
 )

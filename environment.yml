@@ -17,6 +17,3 @@ dependencies:
     # libraries from conda has mkl support
     - numpy
     - scipy
-
-    # interactive stuff
-    - jupyterlab
