@@ -28,11 +28,19 @@ class Tile(object):
     data: np.ndarray
     display: pg.ImageItem = None
 
+    ##
+
     def __hash__(self):
         return hash(self.index)
 
     def __str__(self):
         return f"<Tile, {self.data.shape}, {self.data.dtype} @ {self.index}>"
+
+    ##
+
+    def update_coord(self, coord):
+        self.coord = coord
+        self.display.setPos(pos)
 
 
 class Stitcher(object):
@@ -143,11 +151,45 @@ class Stitcher(object):
                 pos = [p + o for p, o in zip(ref_tile.display.pos(), offset[::-1])]
                 nn_tile.display.setPos(pg.Point(*pos))
 
+                # force screen update
+                pg.QtGui.QApplication.processEvents()
+
+                # extract overlapped region
+                #
+                #   (x0, y0) ----- +
+                #      |           |
+                #      + ------ (x1, y1)
+                #
+                #   (y0, x0, y1, x1)
+                ref_roi = (0, 0) + ref_tile.data.shape
+                pos = [int(p) for p in pos[::-1]]
+                nn_roi = pos + [p + s for p, s in zip(pos, nn_tile.data.shape)]
+                roi = (
+                    max(ref_roi[0], nn_roi[0]),
+                    max(ref_roi[1], nn_roi[1]),
+                    min(ref_roi[2], nn_roi[2]),
+                    min(ref_roi[3], nn_roi[3]),
+                )
+                ny, nx = roi[2] - roi[0], roi[3] - roi[1]
+                logger.debug(f"overlap roi {roi}, shape:{(ny, nx)}")
+                # crop
+                logger.debug(f"ref roi {roi}")
+                ref_reg = ref_tile.data[roi[0] : roi[2], roi[1] : roi[3]]
+                roi = [
+                    r - o for r, o in zip(roi, (roi[0], roi[1]) * 2)
+                ]  # offset back to nn coordinate
+                logger.debug(f"nn roi {roi}")
+                nn_reg = nn_tile.data[roi[0] : roi[2], roi[1] : roi[3]]
+                logger.debug(f"{ref_reg.shape}, {nn_reg.shape}")
+
+                imageio.imwrite("ref.tif", ref_reg)
+                imageio.imwrite("nn.tif", nn_reg)
+
                 # map neighbor intensity to reference by linear transformation
                 ref_reg, nn_reg = ref_reg.ravel(), nn_reg.ravel()
                 A = np.vstack([nn_reg, np.ones(len(nn_reg))]).T
-                m, c = np.linalg.lstsq(A, ref_reg, rcond=None)[0]
-                logger.debug(f".. y={m:.2f}x+{c:.2f}")
+                (m, c), res = np.linalg.lstsq(A, ref_reg, rcond=None)[:2]
+                logger.debug(f".. y={m:.2f}x+{c:.2f}, res:{res}")
                 # recalculate and apply
                 data = nn_tile.data
                 data = m * data + c
@@ -234,11 +276,12 @@ if __name__ == "__main__":
     logger.info(f'found dataset directory "{ds_dir}"')
 
     files = glob.glob(os.path.join(ds_dir, "*.tif"))
+    files.sort()
     data = [imageio.imread(f) for f in files]
     logger.info(f"loaded {len(files)} tiles")
 
     coords = pd.read_csv(os.path.join(ds_dir, "coords.csv"), names=["x", "y", "z"])
     print(coords)
 
-    stitcher = Stitcher(coords[:3], data[:3])
+    stitcher = Stitcher(coords, data)
     stitcher.align()
