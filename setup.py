@@ -27,6 +27,6 @@ setup(
         "zarr",
     ],
     zip_safe=True,
-    extras_require={},
+    extras_require={"viewer": ["pyside2", "--pre pyqtgraph"]},
     entry_points={"console_scripts": ["preview=preview:main"]},
 )
