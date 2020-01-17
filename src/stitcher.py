@@ -76,36 +76,6 @@ class Stitcher(object):
 
         window.show()
 
-        # adjust intensities
-        global_hist = defaultdict(lambda: 0)
-        logger.info("match neighboring histograms")
-        for tile in self.tiles:
-            print(tile.index)
-
-            values, counts = np.unique(tile.data.ravel(), return_counts=True)
-            for v, c in zip(values, counts):
-                global_hist[v] += c
-        # extract result histogram
-        template_values, counts = tuple(zip(*list(sorted(global_hist.items()))))
-        template_values, counts = np.array(template_values), np.array(counts)
-        template_quantiles = np.cumsum(counts) / counts.sum()
-
-        logger.debug(f"{len(template_values)} unique values")
-        # adjust everyone in current tile
-        logger.info("remap to global cdf")
-        for tile in self.tiles:
-            print(tile.index)
-            v, i, c = np.unique(
-                tile.data.ravel(), return_inverse=True, return_counts=True
-            )
-            q = np.cumsum(c) / tile.data.size
-
-            # interp to target histogram
-            iv = np.interp(q, template_quantiles, template_values)
-
-            # restore to correct size
-            tile.data = iv[i].reshape(tile.data.shape)
-
         # montage
         logger.info("generate montage")
         for tile in self.tiles:
@@ -128,7 +98,6 @@ class Stitcher(object):
         # generate neighbor list
         neighbors = self._list_neighbors()
 
-        
         logger.info("align neighbors")
         ratio = 0.2
         for ref_tile, nns in neighbors.items():
@@ -157,7 +126,7 @@ class Stitcher(object):
                 ##nn_reg = match_histograms(ref_reg, nn_reg)
 
                 shift, error, _ = register_translation(
-                    ref_reg, nn_reg, upsample_factor=8, return_error=True
+                    ref_reg, nn_reg, upsample_factor=1, return_error=True
                 )
                 print(f"{ref_index} <- {nn_index}, shifts:{shift}, error:{error:04f}")
 
@@ -173,6 +142,16 @@ class Stitcher(object):
                 # position relative to reference tile
                 pos = [p + o for p, o in zip(ref_tile.display.pos(), offset[::-1])]
                 nn_tile.display.setPos(pg.Point(*pos))
+
+                # map neighbor intensity to reference by linear transformation
+                ref_reg, nn_reg = ref_reg.ravel(), nn_reg.ravel()
+                A = np.vstack([nn_reg, np.ones(len(nn_reg))]).T
+                m, c = np.linalg.lstsq(A, ref_reg, rcond=None)[0]
+                logger.debug(f".. y={m:.2f}x+{c:.2f}")
+                # recalculate and apply
+                data = nn_tile.data
+                data = m * data + c
+                nn_tile.display.setImage(data)
 
                 # force screen update
                 pg.QtGui.QApplication.processEvents()
@@ -261,5 +240,5 @@ if __name__ == "__main__":
     coords = pd.read_csv(os.path.join(ds_dir, "coords.csv"), names=["x", "y", "z"])
     print(coords)
 
-    stitcher = Stitcher(coords[:5], data[:5])
+    stitcher = Stitcher(coords[:3], data[:3])
     stitcher.align()
