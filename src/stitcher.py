@@ -11,7 +11,8 @@ import imageio
 import numpy as np
 import pandas as pd
 import pyqtgraph as pg
-from skimage.exposure import histogram, match_histograms
+from scipy.optimize import minimize
+from skimage.exposure import histogram, match_histograms, equalize_adapthist
 from skimage.feature import register_translation
 
 from utils import find_dataset_dir
@@ -86,6 +87,7 @@ class Stitcher(object):
 
         # montage
         logger.info("generate montage")
+        t = []  # TEST
         for tile in self.tiles:
             print(tile.index)
 
@@ -95,6 +97,8 @@ class Stitcher(object):
             vb.addItem(image)
             tile.display = image
 
+            t.append(tile.data)  # TEST
+
             # shift to default position
             # TODO assuming it is 2d
             coord = [c * n for c, n in zip(tile.index[1:][::-1], tile.data.shape)]
@@ -102,6 +106,8 @@ class Stitcher(object):
 
             # force screen update
             pg.QtGui.QApplication.processEvents()
+
+        t = np.array(t)  # TEST
 
         # generate neighbor list
         neighbors = self._list_neighbors()
@@ -154,6 +160,7 @@ class Stitcher(object):
                 # force screen update
                 pg.QtGui.QApplication.processEvents()
 
+                """
                 # extract overlapped region
                 #
                 #   (x0, y0) ----- +
@@ -186,13 +193,28 @@ class Stitcher(object):
                 imageio.imwrite("nn.tif", nn_reg)
 
                 # map neighbor intensity to reference by linear transformation
-                ref_reg, nn_reg = ref_reg.ravel(), nn_reg.ravel()
-                A = np.vstack([nn_reg, np.ones(len(nn_reg))]).T
-                (m, c), res = np.linalg.lstsq(A, ref_reg, rcond=None)[:2]
-                logger.debug(f".. y={m:.2f}x+{c:.2f}, res:{res}")
+                func = lambda x: np.sum(((x[0] * nn_reg + x[1]) - ref_reg) ** 2)
+                res = minimize(
+                    func, [1, 0], method="Nelder-Mead", options={"disp": True}
+                )
+                m, c = tuple(res.x)
+                print(res)
+
+                # ref_reg, nn_reg = ref_reg.ravel(), nn_reg.ravel()
+                # A = np.vstack([nn_reg, np.ones(len(nn_reg))]).T
+                # m, c = np.linalg.lstsq(A, ref_reg, rcond=None)[0]
+                logger.debug(f".. y={m:.2f}x+{c:.2f}")
+
+                nn_reg = m * nn_reg + c
+                nn_reg = nn_reg.reshape(ny, nx)
+                imageio.imwrite("nn_corr.tif", nn_reg.astype(np.float32))
+
                 # recalculate and apply
                 data = nn_tile.data
-                data = m * data + c
+                ##data = m * data + c
+                """
+                # data = match_histograms(nn_tile.data, t.reshape(2048 * 3, 2048 * 5))
+                data = equalize_adapthist(nn_tile.data)
                 nn_tile.display.setImage(data)
 
                 # force screen update
@@ -283,5 +305,6 @@ if __name__ == "__main__":
     coords = pd.read_csv(os.path.join(ds_dir, "coords.csv"), names=["x", "y", "z"])
     print(coords)
 
-    stitcher = Stitcher(coords, data)
+    nlim = None
+    stitcher = Stitcher(coords[:nlim], data[:nlim])
     stitcher.align()
