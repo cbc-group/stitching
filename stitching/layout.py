@@ -13,7 +13,7 @@ class Layout(object):
 
     @classmethod
     def from_coords(cls, coords):
-        if all(c in coords.column for c in 'zyx'):
+        if all(c in coords.column for c in "zyx"):
             pass
         # convert real scale to rank
         ranks = coords.rank(axis="index", method="dense")
