@@ -9,7 +9,7 @@ from n2v.internals.N2V_DataGenerator import N2V_DataGenerator
 from n2v.models import N2VConfig, N2V
 import numpy as np
 
-from utils import find_dataset_dir
+from .utils import find_dataset_dir
 
 logger = logging.getLogger(__name__)
 

@@ -8,7 +8,7 @@ import imageio
 from utoolbox.cli.prompt import prompt_options
 from utoolbox.io.dataset import LatticeScopeTiledDataset
 
-__all__ = ["preview"]
+__all__ = ["preview_mip", "preview_midplane"]
 
 logger = logging.getLogger(__name__)
 

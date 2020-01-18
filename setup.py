@@ -10,8 +10,7 @@ setup(
     author="Liu, Yen-Ting",
     author_email="ytliu@gate.sinica.edu.tw",
     license="Apache 2.0",
-    packages=find_packages("src"),
-    package_dir={"": "src"},
+    packages=find_packages(),
     package_data={"": ["data/*"]},
     install_requires=[
         "click",
@@ -27,6 +26,6 @@ setup(
         "zarr",
     ],
     zip_safe=True,
-    extras_require={"viewer": ["pyside2", "--pre pyqtgraph"]},
+    extras_require={"viewer": ["pyside2", "pyqtgraph>=0.11.0rc0"]},
     entry_points={"console_scripts": ["preview=preview:main"]},
 )

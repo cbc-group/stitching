@@ -15,34 +15,12 @@ from scipy.optimize import minimize
 from skimage.exposure import histogram, match_histograms, equalize_adapthist
 from skimage.feature import register_translation
 
-from utils import find_dataset_dir
+from stitching.tiles import Tile
+from stitching.utils import find_dataset_dir
 
 __all__ = []
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class Tile(object):
-    index: Tuple[int]
-    coord: Tuple[float]
-    data: np.ndarray
-    display: pg.ImageItem = None
-
-    ##
-
-    def __hash__(self):
-        return hash(self.index)
-
-    def __str__(self):
-        return f"<Tile, {self.data.shape}, {self.data.dtype} @ {self.index}>"
-
-    ##
-
-    def update_coord(self, coord):
-        self.coord = coord
-        self.display.setPos(pos)
-
 
 class Stitcher(object):
     def __init__(self, coords, data):
@@ -305,6 +283,6 @@ if __name__ == "__main__":
     coords = pd.read_csv(os.path.join(ds_dir, "coords.csv"), names=["x", "y", "z"])
     print(coords)
 
-    nlim = None
+    nlim = 2
     stitcher = Stitcher(coords[:nlim], data[:nlim])
     stitcher.align()
