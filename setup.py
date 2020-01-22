@@ -27,5 +27,5 @@ setup(
     ],
     zip_safe=True,
     extras_require={"viewer": ["pyside2", "pyqtgraph>=0.11.0rc0"]},
-    entry_points={"console_scripts": ["preview=preview:main"]},
+    entry_points={"console_scripts": ["preview=stitching.preview:main"]},
 )

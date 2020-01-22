@@ -22,6 +22,7 @@ __all__ = []
 
 logger = logging.getLogger(__name__)
 
+
 class Stitcher(object):
     def __init__(self, coords, data):
         # convert real scale to rank
