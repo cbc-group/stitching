@@ -24,7 +24,7 @@ def preview_mip(ds):
             for x, tile in tile_x.groupby("tile_x"):
                 data = ds[tile]
                 if data.ndim == 2:
-                    logger.warning(f'MIP does not make sense with 2D data')
+                    logger.warning(f"MIP does not make sense with 2D data")
                 else:
                     data = data.max(axis=0)  # mip
                 row.append(data)
