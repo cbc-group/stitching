@@ -127,31 +127,3 @@ class Layout(object):
     ##
 
     ##
-
-
-if __name__ == "__main__":
-    import os
-
-    import coloredlogs
-
-    from stitching.utils import find_dataset_dir
-
-    logging.getLogger("tifffile").setLevel(logging.ERROR)
-    coloredlogs.install(
-        level="DEBUG", fmt="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S"
-    )
-
-    ds_dir = find_dataset_dir("405")
-    logger.info(f'found dataset directory "{ds_dir}"')
-
-    coords = pd.read_csv(os.path.join(ds_dir, "coords.csv"), names=["x", "y", "z"])
-    coords *= 1000 * 10 / 8.2  # px/unit
-    # layout = Layout.from_coords(coords)
-
-    layout = Layout.from_layout(
-        (3, 3, 3), (1, 1, 1), (100, 2662.4, 2662.4), (0, 0.3, 0.3), snake=True
-    )
-
-    print(layout.indices)
-    print(layout.coords)
-

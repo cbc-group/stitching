@@ -68,7 +68,7 @@ class TileCollection(object):
 
         # populate tiles in the viewer
         if viewer:
-            for tile in self.tiles.values():
+            for tile in self.tiles:
                 tile.set_viewer(viewer)
 
     def __getitem__(self, key):
@@ -86,7 +86,7 @@ class TileCollection(object):
 
     @property
     def tiles(self):
-        return self._tiles
+        return self._tiles.values()
 
     ##
 
@@ -114,7 +114,7 @@ class TileCollection(object):
         tile_shape = self.layout.tile_shape
 
         neighbors = dict()
-        for index in self.tiles.keys():
+        for index in self.layout.indices:
             nn = []
             for i, n in enumerate(tile_shape):
                 # prev

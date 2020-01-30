@@ -243,9 +243,40 @@ if __name__ == "__main__":
 
     viewer = Viewer()
     viewer.show()
-    tiles = TileCollection(layout, data, viewer)
+    collection = TileCollection(layout, data, viewer)
 
-    stitcher = Stitcher(tiles)
+    # estimate histogram
+    bins = np.linspace(0, 65535, 256)
+    h = None
+    for tile in collection.tiles:
+        _h, _ = np.histogram(tile.data, bins=bins)
+        try:
+            h += _h
+        except TypeError:
+            h = _h
+
+    n_pixels = np.sum(bins)
+    limit, threshold = n_pixels / 10, n_pixels / 5000
+
+    # find min
+    for _h, e in zip(h, bins):
+        if _h > limit:
+            continue
+        elif _h > threshold:
+            m = e
+            break
+    # find max
+    for _h, e in zip(h[::-1], bins[::-1]):
+        if _h > limit:
+            continue
+        elif _h > threshold:
+            M = e
+            break
+    min_max = (m, M)
+    logger.info(f"10-90 pct: {min_max}")
+    viewer.set_intensity_scale(min_max)
+
+    stitcher = Stitcher(collection)
 
     app = pg.mkQApp()
     app.instance().exec_()

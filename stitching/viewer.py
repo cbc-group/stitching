@@ -44,6 +44,11 @@ class Viewer(object):
     def hide(self):
         self.window.hide()
 
+    def set_intensity_scale(self, min_max):
+        for children in self.viewbox.allChildren():
+            if isinstance(children, pg.ImageItem):
+                children.setLevels(min_max)
+
     def show(self):
         self.window.show()
 
