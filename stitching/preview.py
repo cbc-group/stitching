@@ -1,4 +1,5 @@
 import logging
+import os
 
 import click
 import coloredlogs
@@ -69,11 +70,11 @@ def load_dataset(src_dir, remap, flip):
 @click.command()
 @click.argument("method", type=click.Choice(["mip", "midplane"], case_sensitive=False))
 @click.argument("src_dir", type=click.Path(exists=True, dir_okay=True))
-@click.argument("dst_path", type=click.Path(dir_okay=False))
+@click.argument("dst_dir", type=click.Path(file_okay=False, dir_okay=True))
 @click.option("-r", "--remap", type=str, default="xyz")
 @click.option("-f", "--flip", type=str, default="")
 @click.option("-h", "--host", type=str, default="10.109.20.6:8786")
-def main(method, src_dir, dst_path, remap, flip, host):
+def main(method, src_dir, dst_dir, remap, flip, host):
     logging.getLogger("tifffile").setLevel(logging.ERROR)
     coloredlogs.install(
         level="DEBUG", fmt="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S"
@@ -110,14 +111,21 @@ def main(method, src_dir, dst_path, remap, flip, host):
     logger.info("generating preview...")
     preview = preview.persist()
     progress(preview)
-    # retrieve
-    preview = preview.compute()
 
-    logger.info(f'saving preivew to "{dst_path}"')
+    logger.info(f'saving preivew to "{dst_dir}"')
     try:
-        imageio.volwrite(dst_path, preview)
-    except ValueError:
-        imageio.imwrite(dst_path, preview)
+        os.makedirs(dst_dir)
+    except FileExistsError:
+        logger.warning(f'"{dst_dir} exists')
+        pass
+
+    if preview.ndim == 2:
+        preview = preview.compute()
+        imageio.imwrite(os.path.join(dst_dir, "layer_1.tif"), preview)
+    else:
+        for i, layer in enumerate(preview):
+            layer = layer.compute()
+            imageio.imwrite(os.path.join(dst_dir, f"layer_{i+1}.tif"), layer)
 
     client.close()
 
