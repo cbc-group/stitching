@@ -1,25 +1,116 @@
+import logging
+from operator import mul
+
+import numpy as np
+import pandas as pd
+
 __all__ = []
+
+logger = logging.getLogger(__name__)
 
 
 class Layout(object):
-    def __init__(self, indices=None, coords=None):
+    def __init__(self, indices, coords):
         self._indices, self._coords = indices, coords
 
     @classmethod
-    def from_layout(cls, shape, order, unit_shape=None):
-        if unit_shape is not None:
-            # TODO recalculate coord in pixels
-            pass
+    def from_layout(cls, tiles, direction, shape, overlap, snake=False):
+        """
+        Args:
+            tiles (tuple of int): number of tiles in each dimension
+            direction (tuple of int): tiling direction, describe by +/-1
+            shape (tuple of int): shape of a single tile
+            overlap (float or tuple of float): overlap ratio in each dimension
+            snake (bool, optional): walk through axes consecutively
+        """
+        n_tiles = np.prod(tiles)
+
+        if snake:
+            # requires direction toggling
+            direction = list(direction)
+
+        overlap = tuple(overlap)
+        if len(overlap) == 1:
+            overlap *= len(tiles)  # expand to fit ndims
+        # shrink shape by overlap ratio
+        shape = tuple(s * (1 - o) for s, o in zip(shape, overlap))
+
+        def step(index, axis):
+            overflow = True
+            if direction[axis] < 0 and index[axis] <= 0:
+                # negative overflow
+                if snake:
+                    # toggle direction
+                    index[axis] = 0
+                    direction[axis] *= -1
+                else:
+                    index[axis] = tiles[axis] - 1
+            elif direction[axis] > 0 and index[axis] >= tiles[axis] - 1:
+                # positive overflow
+                if snake:
+                    # toggle direction
+                    index[axis] = tiles[axis] - 1
+                    direction[axis] *= -1
+                else:
+                    index[axis] = 0
+            else:
+                # .. next step in current axis
+                index[axis] += direction[axis]
+                overflow = False
+            return index, overflow
+
+        def walk(index, axis):
+            while True:
+                yield tuple(index)
+                index, overflow = step(index, axis)
+                if overflow:
+                    # current axis overflow
+                    for _axis in range(axis - 1, -1, -1):
+                        index, overflow = step(index, _axis)
+                        if not overflow:
+                            break
+                    else:
+                        return
+
+        # index cursor
+        i_cursor = [t - 1 if d < 0 else 0 for t, d in zip(tiles, direction)]
+        logger.debug(f"cursor init index {tuple(i_cursor)}")
+        # create index maps
+        indices = [c for c in walk(i_cursor, len(tiles) - 1)]
+
+        # multiply tile shapes to get pixel coordinates
+        coords = [tuple(ii * s for ii, s in zip(i, shape)) for i in indices]
+
+        # create instance
+        return cls(indices, coords)
 
     @classmethod
     def from_coords(cls, coords):
-        if all(c in coords.column for c in "zyx"):
-            pass
+        """
+        Args:
+            coords (pd.DataFrame): coordinates in pixels
+        """
+        assert isinstance(
+            coords, pd.DataFrame
+        ), "coordinates need to store in DataFrame"
+
+        if any(c not in coords.columns for c in "xy"):
+            raise ValueError('must have "x" and "y" column')
+        headers = list("zyx" if "z" in coords.columns else "yx")
+
+        # reorder columns
+        coords = coords[headers]
+
         # convert real scale to rank
         ranks = coords.rank(axis="index", method="dense")
         ranks = ranks.astype(int) - 1
 
-        return cls()
+        # pack as list of tuples
+        indices = [tuple(r.values.astype(np.uint16)) for _, r in ranks.iterrows()]
+        coords = [tuple(c.values.astype(np.float32)) for _, c in coords.iterrows()]
+
+        # create instance
+        return cls(indices, coords)
 
     ##
     @property
@@ -33,3 +124,31 @@ class Layout(object):
     ##
 
     ##
+
+
+if __name__ == "__main__":
+    import os
+
+    import coloredlogs
+
+    from stitching.utils import find_dataset_dir
+
+    logging.getLogger("tifffile").setLevel(logging.ERROR)
+    coloredlogs.install(
+        level="DEBUG", fmt="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S"
+    )
+
+    ds_dir = find_dataset_dir("405")
+    logger.info(f'found dataset directory "{ds_dir}"')
+
+    coords = pd.read_csv(os.path.join(ds_dir, "coords.csv"), names=["x", "y", "z"])
+    coords *= 1000 * 10 / 8.2  # px/unit
+    # layout = Layout.from_coords(coords)
+
+    layout = Layout.from_layout(
+        (3, 3, 3), (1, 1, 1), (100, 2662.4, 2662.4), (0, 0.3, 0.3), snake=True
+    )
+
+    print(layout.indices)
+    print(layout.coords)
+
