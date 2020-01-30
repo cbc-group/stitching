@@ -1,53 +1,33 @@
-from collections import defaultdict
-from dataclasses import dataclass
 import glob
-from itertools import product
 import logging
 from math import ceil, floor
 import os
-from typing import Tuple
 
 import imageio
 import numpy as np
 import pandas as pd
 import pyqtgraph as pg
-from scipy.optimize import minimize
 from skimage.exposure import histogram, match_histograms, equalize_adapthist
 from skimage.feature import register_translation
 
-from stitching.tiles import Tile
-from stitching.utils import find_dataset_dir
+from stitching.layout import Layout
+from stitching.tiles import Tile, TileCollection
+from stitching.viewer import Viewer
 
-__all__ = []
+__all__ = ["Stitcher"]
 
 logger = logging.getLogger(__name__)
 
 
 class Stitcher(object):
-    def __init__(self, coords, data):
-        # convert real scale to rank
-        ranks = coords.rank(axis="index", method="dense")
-        ranks = ranks.astype(int) - 1
-
-        # link data with index and coordinate
-        self._tiles = [
-            Tile(tuple(r.values[::-1]), tuple(c.values[::-1]), d)
-            for (_, r), (_, c), d in zip(ranks.iterrows(), coords.iterrows(), data)
-        ]
-
-        self._tile_shape = coords.nunique().values[::-1]
-        desc = ", ".join([f"{a}:{n}" for a, n in zip("xyz", self.tile_shape[::-1])])
-        logger.info(f"tile shape ({desc})")
+    def __init__(self, collection):
+        self._collection = collection
 
     ##
 
     @property
-    def tiles(self):
-        return self._tiles
-
-    @property
-    def tile_shape(self):
-        return self._tile_shape
+    def collection(self):
+        return self._collection
 
     ##
 
@@ -238,35 +218,11 @@ class Stitcher(object):
 
     ##
 
-    """
-    . - . - . - . -. 4
-    |   |   |   |  | 5
-    . - . - . - . -. 4
-    |   |   |   |  | 5
-    . - . - . - . -. 4
-                     22
-    """
-
-    def _list_neighbors(self):
-        # index-tile lookup table
-        tlut = {t.index: t for t in self.tiles}
-
-        neighbors = dict()
-        for index in product(*[range(n) for n in self.tile_shape]):
-            nn = []
-            for i, n in enumerate(self.tile_shape):
-                nnindex = list(index)
-                nnindex[i] += 1
-                if nnindex[i] < n:
-                    # reference <- target
-                    nn.append(tlut[tuple(nnindex)])
-            neighbors[tlut[index]] = nn
-
-        return neighbors
-
 
 if __name__ == "__main__":
     import coloredlogs
+
+    from stitching.utils import find_dataset_dir
 
     logging.getLogger("tifffile").setLevel(logging.ERROR)
     coloredlogs.install(
@@ -282,8 +238,14 @@ if __name__ == "__main__":
     logger.info(f"loaded {len(files)} tiles")
 
     coords = pd.read_csv(os.path.join(ds_dir, "coords.csv"), names=["x", "y", "z"])
-    print(coords)
+    coords *= 1000 / 0.155  # px/unit
+    layout = Layout.from_coords(coords)
 
-    nlim = 2
-    stitcher = Stitcher(coords[:nlim], data[:nlim])
-    stitcher.align()
+    viewer = Viewer()
+    viewer.show()
+    tiles = TileCollection(layout, data, viewer)
+
+    stitcher = Stitcher(tiles)
+
+    app = pg.mkQApp()
+    app.instance().exec_()

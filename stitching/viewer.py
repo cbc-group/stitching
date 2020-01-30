@@ -19,8 +19,7 @@ class Viewer(object):
         vb.setAspectLocked()
         vb.invertY()
         vb.enableAutoRange()
-
-        window.show()
+        self._viewbox = vb
 
     ##
 
@@ -34,37 +33,19 @@ class Viewer(object):
 
     ##
 
-    def set_visible(self, flag):
-        self.window.setVisible(flag)
+    def add_image(self, image):
+        handle = pg.ImageItem(image)
+        handle.setOpts(axisOrder="row-major")
 
+        self.viewbox.addItem(handle)
 
-if __name__ == "__main__":
-    import glob
-    import os
+        return handle
 
-    import coloredlogs
-    import imageio
-    import pandas as pd
+    def hide(self):
+        self.window.hide()
 
-    from stitching.utils import find_dataset_dir
+    def show(self):
+        self.window.show()
 
-    logging.getLogger("tifffile").setLevel(logging.ERROR)
-    coloredlogs.install(
-        level="DEBUG", fmt="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S"
-    )
-
-    ds_dir = find_dataset_dir("405")
-    logger.info(f'found dataset directory "{ds_dir}"')
-
-    files = glob.glob(os.path.join(ds_dir, "*.tif"))
-    files.sort()
-    data = [imageio.imread(f) for f in files]
-    logger.info(f"loaded {len(files)} tiles")
-
-    coords = pd.read_csv(os.path.join(ds_dir, "coords.csv"), names=["x", "y", "z"])
-    print(coords)
-
-    viewer = Viewer()
-
-    app = pg.mkQApp()
-    app.instance().exec_()
+    def update(self):
+        pg.QtGui.QApplication.processEvents()

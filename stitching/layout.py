@@ -1,5 +1,4 @@
 import logging
-from operator import mul
 
 import numpy as np
 import pandas as pd
@@ -12,28 +11,28 @@ logger = logging.getLogger(__name__)
 class Layout(object):
     def __init__(self, indices, coords):
         self._indices, self._coords = indices, coords
+        self._tile_shape = tuple(len(set(s)) for s in zip(*self.indices))
+        logger.info(f"{self.tile_shape} tiles")
 
     @classmethod
-    def from_layout(cls, tiles, direction, shape, overlap, snake=False):
+    def from_layout(cls, tile_shape, direction, data_shape, overlap, snake=False):
         """
         Args:
-            tiles (tuple of int): number of tiles in each dimension
+            tile_shape (tuple of int): number of tiles in each dimension
             direction (tuple of int): tiling direction, describe by +/-1
-            shape (tuple of int): shape of a single tile
+            data_shape (tuple of int): shape of a single tile
             overlap (float or tuple of float): overlap ratio in each dimension
             snake (bool, optional): walk through axes consecutively
         """
-        n_tiles = np.prod(tiles)
-
         if snake:
             # requires direction toggling
             direction = list(direction)
 
         overlap = tuple(overlap)
         if len(overlap) == 1:
-            overlap *= len(tiles)  # expand to fit ndims
+            overlap *= len(tile_shape)  # expand to fit ndims
         # shrink shape by overlap ratio
-        shape = tuple(s * (1 - o) for s, o in zip(shape, overlap))
+        data_shape = tuple(s * (1 - o) for s, o in zip(data_shape, overlap))
 
         def step(index, axis):
             overflow = True
@@ -44,12 +43,12 @@ class Layout(object):
                     index[axis] = 0
                     direction[axis] *= -1
                 else:
-                    index[axis] = tiles[axis] - 1
-            elif direction[axis] > 0 and index[axis] >= tiles[axis] - 1:
+                    index[axis] = tile_shape[axis] - 1
+            elif direction[axis] > 0 and index[axis] >= tile_shape[axis] - 1:
                 # positive overflow
                 if snake:
                     # toggle direction
-                    index[axis] = tiles[axis] - 1
+                    index[axis] = tile_shape[axis] - 1
                     direction[axis] *= -1
                 else:
                     index[axis] = 0
@@ -73,13 +72,13 @@ class Layout(object):
                         return
 
         # index cursor
-        i_cursor = [t - 1 if d < 0 else 0 for t, d in zip(tiles, direction)]
+        i_cursor = [t - 1 if d < 0 else 0 for t, d in zip(tile_shape, direction)]
         logger.debug(f"cursor init index {tuple(i_cursor)}")
         # create index maps
-        indices = [c for c in walk(i_cursor, len(tiles) - 1)]
+        indices = [c for c in walk(i_cursor, len(tile_shape) - 1)]
 
         # multiply tile shapes to get pixel coordinates
-        coords = [tuple(ii * s for ii, s in zip(i, shape)) for i in indices]
+        coords = [tuple(ii * s for ii, s in zip(i, data_shape)) for i in indices]
 
         # create instance
         return cls(indices, coords)
@@ -120,6 +119,10 @@ class Layout(object):
     @property
     def indices(self):
         return self._indices
+
+    @property
+    def tile_shape(self):
+        return self._tile_shape
 
     ##
 
