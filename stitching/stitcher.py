@@ -37,8 +37,10 @@ class Stitcher(object):
 
             print(str(ref_tile))
             for tile in nn_tiles:
-                _, roi = ref_tile.overlap_roi(tile)
-                print(f".. {str(tile)}, {roi}")
+                print(f".. {str(tile)}, ", end="")
+
+                _, roi = ref_tile.overlap_roi(tile, return_raw_roi=True)
+                print(roi)
 
         # # generate neighbor list
         # neighbors = self._list_neighbors()

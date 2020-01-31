@@ -18,7 +18,7 @@ class Tile(object):
         self._handle = None
 
     def __str__(self):
-        index = ", ".join([f"{i:3d}" for i in self.index[::-1]])
+        index = ", ".join([f"{i:d}" for i in self.index[::-1]])
         coord = ", ".join([f"{c:.1f}" for c in self.coord[::-1]])
         return f"<Tile ({index}) @ ({coord})"
 
@@ -61,8 +61,22 @@ class Tile(object):
 
         # up-left
         a_coord0, b_coord0 = np.array(self.coord), np.array(tile.coord)
+
         # down-right
         a_shape, b_shape = np.array(self.data.shape), np.array(tile.data.shape)
+        if len(a_coord0) < len(a_shape):
+            # pad missing dimensions
+            a_coord0, b_coord0 = (
+                np.concatenate([1], a_coord0),
+                np.concatenate([1], b_coord0),
+            )
+        elif len(a_coord0) > len(a_shape):
+            # drop excessive dimension
+            a_coord0, b_coord0 = a_coord0[1:], b_coord0[1:]
+
+        # should only differ by 1-D
+        assert a_coord0.ndim == a_shape.ndim
+
         a_coord1, b_coord1 = a_coord0 + a_shape, b_coord0 + b_shape
 
         # max(up-left)
@@ -79,13 +93,14 @@ class Tile(object):
         # offset the roi coordinate to local coordinate
         c_coord0 -= a_coord0
         c_coord1 -= a_coord0
-
-        assert np.all(c_coord0 >= np.array((0, 0))) and np.all(
-            c_coord1 < a_shape
+        assert np.all(c_coord0 >= 0) and np.all(
+            c_coord1 <= a_shape
         ), "unknown ROI calculation error"
 
         # build slice
-        slices = [slice(i, j) for i, j in zip(c_coord0, c_coord1)]
+        slices = [
+            slice(i, j) for i, j in zip(c_coord0.astype(int), c_coord1.astype(int))
+        ]
         subregion = self.data[slices]
 
         if return_raw_roi:
