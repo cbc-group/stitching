@@ -12,7 +12,10 @@ class Layout(object):
     def __init__(self, indices, coords):
         self._indices, self._coords = indices, coords
         self._tile_shape = tuple(len(set(s)) for s in zip(*self.indices))
-        logger.info(f"{self.tile_shape} tiles")
+
+        label = "xyz" if len(self.tile_shape) == 3 else "xy"
+        desc = ", ".join([f"{l}:{v}" for l, v in zip(label, self.tile_shape[::-1])])
+        logger.info(f"({desc}) tiles")
 
     @classmethod
     def from_layout(cls, tile_shape, direction, data_shape, overlap, snake=False):
