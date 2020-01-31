@@ -1,5 +1,7 @@
 import logging
 
+import numpy as np
+
 from stitching.layout import Layout
 
 __all__ = ["Tile", "TileCollection"]
@@ -16,7 +18,7 @@ class Tile(object):
         self._handle = None
 
     def __str__(self):
-        index = ", ".join([f"{i:4d}" for i in self.index[::-1]])
+        index = ", ".join([f"{i:3d}" for i in self.index[::-1]])
         coord = ", ".join([f"{c:.1f}" for c in self.coord[::-1]])
         return f"<Tile ({index}) @ ({coord})"
 
@@ -40,8 +42,56 @@ class Tile(object):
 
     ##
 
-    def overlap_roi(self, tile):
-        pass
+    def overlap_roi(self, tile, return_raw_roi=False):
+        """
+        Returns region that overlap with a provided tile.
+
+        Args:
+            tile (Tile): tile to compare with
+            return_raw_roi (bool, optional): return ROI coordinate in global coordinate
+        
+        Returns:
+            (Tile or None): returns a view if overlapped, otherwise, None
+        """
+        #   up left
+        #   (x0, y0) ----- +
+        #      |           |
+        #      + ------ (x1, y1)
+        #               down right
+
+        # up-left
+        a_coord0, b_coord0 = np.array(self.coord), np.array(tile.coord)
+        # down-right
+        a_shape, b_shape = np.array(self.data.shape), np.array(tile.data.shape)
+        a_coord1, b_coord1 = a_coord0 + a_shape, b_coord0 + b_shape
+
+        # max(up-left)
+        c_coord0 = np.maximum(a_coord0, b_coord0)
+        # min(down-right)
+        c_coord1 = np.minimum(a_coord1, b_coord1)
+
+        if np.any(c_coord1 <= c_coord0):
+            return None
+
+        if return_raw_roi:
+            roi = tuple(c_coord0) + tuple(c_coord1)
+
+        # offset the roi coordinate to local coordinate
+        c_coord0 -= a_coord0
+        c_coord1 -= a_coord0
+
+        assert np.all(c_coord0 >= np.array((0, 0))) and np.all(
+            c_coord1 < a_shape
+        ), "unknown ROI calculation error"
+
+        # build slice
+        slices = [slice(i, j) for i, j in zip(c_coord0, c_coord1)]
+        subregion = self.data[slices]
+
+        if return_raw_roi:
+            return subregion, roi
+        else:
+            return subregion
 
     def shift(self, offset):
         pass
@@ -72,7 +122,7 @@ class TileCollection(object):
                 tile.set_viewer(viewer)
 
     def __getitem__(self, key):
-        return self.tiles[tuple(key)]
+        return self._tiles[tuple(key)]
 
     ##
 
