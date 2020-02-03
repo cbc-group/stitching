@@ -15,7 +15,7 @@ class Tile(object):
         self._data = data
 
         # use set_viewer to ensure coord is initialized
-        self._handle = None
+        self._handle, self._viewer = None, None
 
     def __str__(self):
         index = ", ".join([f"{i:d}" for i in self.index[::-1]])
@@ -93,14 +93,16 @@ class Tile(object):
         # offset the roi coordinate to local coordinate
         c_coord0 -= a_coord0
         c_coord1 -= a_coord0
+        logger.debug(f"ROI coordinate, top-left {c_coord0}, bottom-right {c_coord1}")
         assert np.all(c_coord0 >= 0) and np.all(
             c_coord1 <= a_shape
         ), "unknown ROI calculation error"
 
         # build slice
-        slices = [
-            slice(i, j) for i, j in zip(c_coord0.astype(int), c_coord1.astype(int))
-        ]
+        slices = tuple(
+            slice(i, j)
+            for i, j in zip(c_coord0.round().astype(int), c_coord1.round().astype(int))
+        )
         subregion = self.data[slices]
 
         if return_raw_roi:
@@ -109,7 +111,11 @@ class Tile(object):
             return subregion
 
     def shift(self, offset):
-        pass
+        self._coord = [c + o for c, o in zip(self.coord, offset)]
+        self.handle.setPos(*self.coord[::-1][:2])
+
+        # force update
+        self._viewer.update()
 
     def set_viewer(self, viewer: "Viewer"):
         self._handle = viewer.add_image(self.data)
@@ -118,6 +124,7 @@ class Tile(object):
         self.handle.setPos(*self.coord[::-1][:2])
 
         # force update
+        self._viewer = viewer
         viewer.update()
 
 
