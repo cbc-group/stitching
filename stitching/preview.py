@@ -16,12 +16,12 @@ logger = logging.getLogger(__name__)
 def run(ds, size_limit=4096):
     # estimate resize ratio, no larger than 4k
     tile_shape, (im_shape, im_dtype) = ds.tile_shape, ds._load_array_info()
-    shape = list(t * i for t, i in zip(tile_shape, im_shape))
+    shape = tuple(t * i for t, i in zip(tile_shape, im_shape))
     logger.debug(f"original preview {shape}, {im_dtype}")
     ratio = 1
     while True:
         if all((s // ratio) > size_limit for s in shape):
-            logger.debug(f"ratio={ratio}, exceeds size limit({size_limit})")
+            logger.debug(f"ratio={ratio}, exceeds size limit ({size_limit})")
             ratio *= 2
         else:
             break
@@ -31,7 +31,6 @@ def run(ds, size_limit=4096):
     layers = []
     sampler = None
     for tz, tile_xy in ds.groupby("tile_z"):
-        print(f"z tile={tz}")
         layer = []
         for ty, tile_x in tile_xy.groupby("tile_y"):
             row = []
@@ -99,7 +98,7 @@ def main(src_dir, dst_dir, remap, flip, host):
 
     # create directives
     preview = run(src_ds)
-    logger.info(f"preview result {preview.shape}, {preview.dtype}")
+    logger.info(f"final preview {preview.shape}, {preview.dtype}")
 
     logger.info(f'saving preivew to "{dst_dir}"')
     try:
