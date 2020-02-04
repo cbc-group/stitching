@@ -9,51 +9,47 @@ import imageio
 from utoolbox.cli.prompt import prompt_options
 from utoolbox.io.dataset import LatticeScopeTiledDataset
 
-__all__ = ["preview_mip", "preview_midplane"]
 
 logger = logging.getLogger(__name__)
 
 
-def preview_mip(ds):
-    """Preview maximum intensity projection of each tiled-stack."""
+def run(ds, size_limit=4096):
+    # estimate resize ratio, no larger than 4k
+    tile_shape, (im_shape, im_dtype) = ds.tile_shape, ds._load_array_info()
+    shape = list(t * i for t, i in zip(tile_shape, im_shape))
+    logger.debug(f"original preview {shape}, {im_dtype}")
+    ratio = 1
+    while True:
+        if all((s // ratio) > size_limit for s in shape):
+            logger.debug(f"ratio={ratio}, exceeds size limit({size_limit})")
+            ratio *= 2
+        else:
+            break
+    logger.info(f"target downsampling {ratio}x")
+
+    # retrieve tiles
     layers = []
-    for z, tile_xy in ds.groupby("tile_z"):
-        print(z)
+    sampler = None
+    for tz, tile_xy in ds.groupby("tile_z"):
+        print(f"z tile={tz}")
         layer = []
-        for y, tile_x in tile_xy.groupby("tile_y"):
+        for ty, tile_x in tile_xy.groupby("tile_y"):
             row = []
-            for x, tile in tile_x.groupby("tile_x"):
+            for tx, tile in tile_x.groupby("tile_x"):
                 data = ds[tile]
-                if data.ndim == 2:
-                    logger.warning(f"MIP does not make sense with 2D data")
+                if sampler:
+                    data = data[sampler]
                 else:
-                    data = data.max(axis=0)  # mip
+                    # create sampler
+                    sampler = (slice(None, None, ratio),) * 2
+                    if data.ndim == 3:
+                        sampler = (slice(None, None, None),) + sampler
+                    data = data[sampler]
                 row.append(data)
             layer.append(row)
         layers.append(layer)
     preview = da.block(layers)
-    return preview
 
-
-def preview_midplane(ds):
-    """Preview midplane in the global coordinate."""
-    z = ds.index.get_level_values("tile_z").unique().values
-    cz = z[len(z) // 2]
-    logger.info(f"x mid-plane @ {cz}")
-
-    # select the tiles
-    tiles = ds.iloc[ds.index.get_level_values("tile_z") == cz]
-
-    layer = []
-    for y, tile_x in tiles.groupby("tile_y"):
-        row = []
-        for x, tile in tile_x.groupby("tile_x"):
-            data = ds[tile]
-            if len(data.shape) > 2:
-                data = data[data.shape[0] // 2, ...]  # mid plane of the stack
-            row.append(data)
-        layer.append(row)
-    preview = da.block(layer)
     return preview
 
 
@@ -68,13 +64,12 @@ def load_dataset(src_dir, remap, flip):
 
 
 @click.command()
-@click.argument("method", type=click.Choice(["mip", "midplane"], case_sensitive=False))
 @click.argument("src_dir", type=click.Path(exists=True, dir_okay=True))
 @click.argument("dst_dir", type=click.Path(file_okay=False, dir_okay=True))
 @click.option("-r", "--remap", type=str, default="xyz")
 @click.option("-f", "--flip", type=str, default="")
 @click.option("-h", "--host", type=str, default="10.109.20.6:8786")
-def main(method, src_dir, dst_dir, remap, flip, host):
+def main(src_dir, dst_dir, remap, flip, host):
     logging.getLogger("tifffile").setLevel(logging.ERROR)
     coloredlogs.install(
         level="DEBUG", fmt="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S"
@@ -103,14 +98,8 @@ def main(method, src_dir, dst_dir, remap, flip, host):
     print(src_ds.inventory)
 
     # create directives
-    action = {"mip": preview_mip, "midplane": preview_midplane}[method]
-    preview = action(src_ds)
+    preview = run(src_ds)
     logger.info(f"preview result {preview.shape}, {preview.dtype}")
-
-    # execute on cluster
-    logger.info("generating preview...")
-    preview = preview.persist()
-    progress(preview)
 
     logger.info(f'saving preivew to "{dst_dir}"')
     try:
@@ -119,13 +108,10 @@ def main(method, src_dir, dst_dir, remap, flip, host):
         logger.warning(f'"{dst_dir} exists')
         pass
 
-    if preview.ndim == 2:
-        preview = preview.compute()
-        imageio.imwrite(os.path.join(dst_dir, "layer_1.tif"), preview)
-    else:
-        for i, layer in enumerate(preview):
-            layer = layer.compute()
-            imageio.imwrite(os.path.join(dst_dir, f"layer_{i+1}.tif"), layer)
+    for i, layer in enumerate(preview):
+        print(i)
+        layer = layer.compute()
+        imageio.imwrite(os.path.join(dst_dir, f"layer_{i+1}.tif"), layer)
 
     client.close()
 
