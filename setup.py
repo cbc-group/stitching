@@ -12,7 +12,7 @@ setup(
     license="Apache 2.0",
     packages=find_packages(),
     package_data={"": ["data/*"]},
-    python_requires="==3.7",
+    python_requires="~=3.7",
     install_requires=[
         "click",
         "coloredlogs",
