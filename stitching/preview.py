@@ -4,10 +4,10 @@ import os
 import click
 import coloredlogs
 import dask.array as da
-from dask.distributed import Client, progress
+from dask.distributed import Client, LocalCluster
 import imageio
 from utoolbox.cli.prompt import prompt_options
-from utoolbox.io.dataset import LatticeScopeTiledDataset
+from utoolbox.io.dataset import open_dataset
 
 
 logger = logging.getLogger(__name__)
@@ -18,9 +18,9 @@ def run(ds, size_limit=4096):
     tile_shape, (im_shape, im_dtype) = ds.tile_shape, ds._load_array_info()
     shape = tuple(t * i for t, i in zip(tile_shape, im_shape))
     logger.debug(f"original preview {shape}, {im_dtype}")
-    ratio = 1
+    ratio, layer_shape = 1, shape[1:] if len(shape) == 3 else shape
     while True:
-        if all((s // ratio) > size_limit for s in shape):
+        if all((s // ratio) > size_limit for s in layer_shape):
             logger.debug(f"ratio={ratio}, exceeds size limit ({size_limit})")
             ratio *= 2
         else:
@@ -28,32 +28,48 @@ def run(ds, size_limit=4096):
     logger.info(f"target downsampling {ratio}x")
 
     # retrieve tiles
-    layers = []
-    sampler = None
-    for tz, tile_xy in ds.groupby("tile_z"):
+    def retrieve(tile):
+        data = ds[tile]
+
+        sampler = (slice(None, None, ratio),) * 2
+        if data.ndim == 3:
+            sampler = (slice(None, None, None),) + sampler
+        data = data[sampler]
+
+        return data
+
+    def groupby_3d_tiles():
+        layers = []
+        for tz, tile_xy in ds.groupby(["tile_z"]):
+            layer = []
+            for ty, tile_x in tile_xy.groupby("tile_y"):
+                row = []
+                for tx, tile in tile_x.groupby("tile_x"):
+                    row.append(retrieve(tile))
+                layer.append(row)
+            layers.append(layer)
+        return layers
+
+    def groupby_2d_tiles():
         layer = []
-        for ty, tile_x in tile_xy.groupby("tile_y"):
+        for ty, tile_x in ds.groupby("tile_y"):
             row = []
             for tx, tile in tile_x.groupby("tile_x"):
-                data = ds[tile]
-                if sampler:
-                    data = data[sampler]
-                else:
-                    # create sampler
-                    sampler = (slice(None, None, ratio),) * 2
-                    if data.ndim == 3:
-                        sampler = (slice(None, None, None),) + sampler
-                    data = data[sampler]
-                row.append(data)
+                row.append(retrieve(tile))
             layer.append(row)
-        layers.append(layer)
-    preview = da.block(layers)
+        return layer
+
+    if "tile_z" in ds.index:
+        groupby = groupby_3d_tiles
+    else:
+        groupby = groupby_2d_tiles
+    preview = da.block(groupby())
 
     return preview
 
 
 def load_dataset(src_dir, remap, flip):
-    ds = LatticeScopeTiledDataset(src_dir)
+    ds = open_dataset(src_dir)
     if remap != "xyz":
         remap = {a: b for a, b in zip("xyz", remap)}
         ds.remap_tiling_axes(remap)
@@ -76,7 +92,10 @@ def main(src_dir, dst_dir, remap, flip, host):
 
     logger = logging.getLogger(__name__)
 
-    client = Client(host)
+    if host == "local":
+        client = LocalCluster()
+    else:
+        client = Client(host)
     logger.info(client)
 
     src_ds = load_dataset(src_dir, remap, flip)
@@ -85,15 +104,20 @@ def main(src_dir, dst_dir, remap, flip, host):
     )
     logger.info(f"tiling dimension ({', '.join(desc)})")
 
-    views = src_ds.index.get_level_values("view").unique().values
-    if len(views) > 0:
-        view = prompt_options("Please select a view: ", views)
-        src_ds.drop(
-            src_ds.iloc[src_ds.index.get_level_values("view") != view].index,
-            inplace=True,
-        )
-        logger.debug(f'found multiple views, using "{view}"')
+    try:
+        views = src_ds.index.get_level_values("view").unique().values
+        if len(views) > 0:
+            view = prompt_options("Please select a view: ", views)
+            src_ds.drop(
+                src_ds.iloc[src_ds.index.get_level_values("view") != view].index,
+                inplace=True,
+            )
+            logger.debug(f'found multiple views, using "{view}"')
+    except KeyError:
+        # no need to differentiate different view
+        logger.debug("not a multi-view dataset")
 
+    # preview summary
     print(src_ds.inventory)
 
     # create directives
@@ -104,7 +128,7 @@ def main(src_dir, dst_dir, remap, flip, host):
     try:
         os.makedirs(dst_dir)
     except FileExistsError:
-        logger.warning(f'"{dst_dir} exists')
+        logger.warning(f'"{dst_dir}" exists')
         pass
 
     for i, layer in enumerate(preview):
