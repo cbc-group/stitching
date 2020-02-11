@@ -6,6 +6,7 @@ import coloredlogs
 import dask.array as da
 from dask.distributed import Client, LocalCluster
 import imageio
+from tqdm import tqdm
 from utoolbox.cli.prompt import prompt_options
 from utoolbox.io.dataset import open_dataset
 
@@ -39,6 +40,7 @@ def run(ds, size_limit=4096):
         return data
 
     def groupby_3d_tiles():
+        logger.info("3D tiling dataset")
         layers = []
         for tz, tile_xy in ds.groupby(["tile_z"]):
             layer = []
@@ -51,6 +53,7 @@ def run(ds, size_limit=4096):
         return layers
 
     def groupby_2d_tiles():
+        logger.info("2D tiling dataset")
         layer = []
         for ty, tile_x in ds.groupby("tile_y"):
             row = []
@@ -59,7 +62,7 @@ def run(ds, size_limit=4096):
             layer.append(row)
         return layer
 
-    if "tile_z" in ds.index:
+    if "tile_z" in ds.index.names:
         groupby = groupby_3d_tiles
     else:
         groupby = groupby_2d_tiles
@@ -106,13 +109,15 @@ def main(src_dir, dst_dir, remap, flip, host):
 
     try:
         views = src_ds.index.get_level_values("view").unique().values
-        if len(views) > 0:
+        if len(views) > 1:
             view = prompt_options("Please select a view: ", views)
             src_ds.drop(
                 src_ds.iloc[src_ds.index.get_level_values("view") != view].index,
                 inplace=True,
             )
             logger.debug(f'found multiple views, using "{view}"')
+        else:
+            logger.debug(f"single-view dataset")
     except KeyError:
         # no need to differentiate different view
         logger.debug("not a multi-view dataset")
@@ -131,8 +136,9 @@ def main(src_dir, dst_dir, remap, flip, host):
         logger.warning(f'"{dst_dir}" exists')
         pass
 
-    for i, layer in enumerate(preview):
-        print(i)
+    pbar = tqdm(enumerate(preview), total=preview.shape[0])
+    for i, layer in pbar:
+        pbar.set_description(f"layer {i+1}")
         layer = layer.compute()
         imageio.imwrite(os.path.join(dst_dir, f"layer_{i+1}.tif"), layer)
 
