@@ -70,7 +70,7 @@ def run(ds, size_limit=4096):
 
 def load_dataset(src_dir, remap, flip):
     ds = open_dataset(src_dir)
-    if remap != "xyz"[:len(remap)]:
+    if len(remap) > 1 and remap != "xyz"[:len(remap)]:
         remap = {a: b for a, b in zip("xyz", remap)}
         ds.remap_tiling_axes(remap)
     if flip:
