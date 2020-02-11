@@ -22,7 +22,7 @@ setup(
         "pyyaml",
         "scipy",
         "tqdm",
-        "utoolbox",
+        "utoolbox>=0.6",
         "xarray",
         "zarr",
     ],
