@@ -122,6 +122,21 @@ def main(src_dir, dst_dir, remap, flip, host):
         # no need to differentiate different view
         logger.debug("not a multi-view dataset")
 
+    try:
+        channels = src_ds.index.get_level_values("channel").unique().values
+        if len(channels) > 1:
+            channel = prompt_options("Please select a channel: ", channels)
+            src_ds.drop(
+                src_ds.iloc[src_ds.index.get_level_values("channel") != channel].index,
+                inplace=True,
+            )
+            logger.debug(f'found multiple channels, using "{channel}"')
+        else:
+            logger.debug(f"single-channel dataset")
+    except KeyError:
+        # no need to differentiate different view
+        logger.debug("not a multi-channel dataset")
+
     # preview summary
     print(src_ds.inventory)
 
