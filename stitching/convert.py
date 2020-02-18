@@ -17,7 +17,7 @@ def main(src_dir, dst_dir):
 
     logger.info("dumping...")
     BigDataViewerDataset.dump(
-        dst_dir, ds, [(1, 2, 2), (1, 4, 4)], chunks=(16, 64, 64), compression="gzip"
+        dst_dir, ds, [(1, 4, 4)], chunks=(16, 64, 64), compression="gzip"
     )
 
 
@@ -35,5 +35,5 @@ if __name__ == "__main__":
 
     main(
         "X:/vins/ExM_kidney/20200130_ExM_kidney_7_d_k5_Gelatin_FITC_lectin488_11x16_z50um_1",
-        "V:/Vins/20200130_ExM_kidney_7_d_k5_Gelatin_FITC_11x16_z50um_1_bin2",
+        "V:/Vins/20200130_ExM_kidney_7_d_k5_Gelatin_FITC_11x16_z50um_1_bin4",
     )
