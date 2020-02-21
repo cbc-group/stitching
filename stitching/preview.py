@@ -34,7 +34,9 @@ def run(ds, size_limit=4096):
 
         sampler = (slice(None, None, ratio),) * 2
         if data.ndim == 3:
-            data = data.max(axis=0)  # flatten
+            # data = data.max(axis=0)  # flatten
+            # normally, we don't sub-sample z
+            sampler = (slice(None, None, None),) + sampler
         data = data[sampler]
 
         return data
