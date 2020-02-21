@@ -1,5 +1,6 @@
 import logging
 import os
+from concurrent.futures import ThreadPoolExecutor
 
 import click
 import coloredlogs
@@ -7,6 +8,7 @@ import dask.array as da
 from dask.distributed import Client, LocalCluster
 import imageio
 from tqdm import tqdm
+
 from utoolbox.cli.prompt import prompt_options
 from utoolbox.io.dataset import open_dataset
 
@@ -97,12 +99,6 @@ def main(src_dir, dst_dir, remap, flip, host):
 
     logger = logging.getLogger(__name__)
 
-    if host == "local":
-        client = LocalCluster()
-    else:
-        client = Client(host)
-    logger.info(client)
-
     src_ds = load_dataset(src_dir, remap, flip)
     desc = tuple(
         f"{k}={v}" for k, v in zip(("x", "y", "z"), reversed(src_ds.tile_shape))
@@ -154,10 +150,24 @@ def main(src_dir, dst_dir, remap, flip, host):
         pass
 
     pbar = tqdm(enumerate(preview), total=preview.shape[0])
-    for i, layer in pbar:
+
+    def task(i, layer):
         pbar.set_description(f"layer {i+1}")
         layer = layer.compute()
-        imageio.imwrite(os.path.join(dst_dir, f"layer_{i+1}.tif"), layer)
+        imageio.imwrite(os.path.join(dst_dir, f"layer_{i+1:04d}.tif"), layer)
 
-    client.close()
+    if host == "local":
+        client = LocalCluster()
+    else:
+        client = Client(host)
+    logger.info(client)
+
+    try:
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            for i, layer in pbar:
+                pool.submit(task, i, layer)
+    except KeyboardInterrupt:
+        logger.info(f"keyboard interrupted")
+    finally:
+        client.close()
 
