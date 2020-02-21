@@ -163,7 +163,7 @@ def main(src_dir, dst_dir, remap, flip, host):
     logger.info(client)
 
     try:
-        with ThreadPoolExecutor(max_workers=1) as pool:
+        with ThreadPoolExecutor() as pool:
             for i, layer in pbar:
                 pool.submit(task, i, layer)
     except KeyboardInterrupt:
