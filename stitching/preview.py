@@ -1,6 +1,6 @@
 import logging
 import os
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import click
 import coloredlogs
@@ -149,13 +149,6 @@ def main(src_dir, dst_dir, remap, flip, host):
         logger.warning(f'"{dst_dir}" exists')
         pass
 
-    pbar = tqdm(enumerate(preview), total=preview.shape[0])
-
-    def task(i, layer):
-        pbar.set_description(f"layer {i+1}")
-        layer = layer.compute()
-        imageio.imwrite(os.path.join(dst_dir, f"layer_{i+1:04d}.tif"), layer)
-
     if host == "local":
         client = LocalCluster()
     else:
@@ -164,8 +157,15 @@ def main(src_dir, dst_dir, remap, flip, host):
 
     try:
         with ThreadPoolExecutor() as pool:
-            for i, layer in pbar:
-                pool.submit(task, i, layer)
+            futures = {
+                pool.submit(layer.compute()): i for i, layer in enumerate(preview)
+            }
+            pbar = tqdm(as_completed(futures), total=preview.shape[0])
+            for future in pbar:
+                i = futures[future] + 1
+                pbar.set_description(f"layer {i}")
+                layer = future.result()
+                imageio.imwrite(os.path.join(dst_dir, f"layer_{i:04d}.tif"), layer)
     except KeyboardInterrupt:
         logger.info(f"keyboard interrupted")
     finally:
