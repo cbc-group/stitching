@@ -23,8 +23,6 @@ setup(
         "scipy",
         "tqdm",
         "utoolbox>=0.6.0",
-        "xarray",
-        "zarr",
     ],
     zip_safe=True,
     extras_require={"viewer": ["pyside2", "pyqtgraph>=0.11.0rc0"]},
