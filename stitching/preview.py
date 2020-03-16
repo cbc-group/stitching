@@ -41,7 +41,8 @@ def run(ds, size_limit=4096, mip=False):
             else:
                 # normally, we don't sub-sample z
                 sampler = (slice(None, None, None),) + sampler
-        data = data[sampler]
+        # data = data[sampler]
+        data = data[sampler].persist()  # FIXME will this work? force early computation
 
         return data
 
@@ -66,6 +67,7 @@ def run(ds, size_limit=4096, mip=False):
     index = ["tile_y", "tile_x"]
     if "tile_z" in ds.index.names:
         index = ["tile_z"] + index
+    logger.info(f"a {len(index)}-D tiled dataset")
     preview = da.block(groupby_tiles(ds, index))
 
     return preview
