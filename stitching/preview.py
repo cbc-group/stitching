@@ -1,21 +1,21 @@
 import logging
 import os
+from typing import List
 
 import click
 import coloredlogs
 import dask.array as da
-from dask.distributed import Client, LocalCluster
 import imageio
+from dask.distributed import Client, LocalCluster
 from tqdm import tqdm
 
 from utoolbox.cli.prompt import prompt_options
 from utoolbox.io.dataset import open_dataset
 
-
 logger = logging.getLogger(__name__)
 
 
-def run(ds, size_limit=4096):
+def run(ds, size_limit=4096, mip=False):
     # estimate resize ratio, no larger than 4k
     tile_shape, (im_shape, im_dtype) = ds.tile_shape, ds._load_array_info()
     shape = tuple(t * i for t, i in zip(tile_shape, im_shape))
@@ -35,41 +35,38 @@ def run(ds, size_limit=4096):
 
         sampler = (slice(None, None, ratio),) * 2
         if data.ndim == 3:
-            # data = data.max(axis=0)  # flatten
-            # normally, we don't sub-sample z
-            sampler = (slice(None, None, None),) + sampler
+            if mip:
+                # flatten the entire tile
+                data = data.max(axis=0)
+            else:
+                # normally, we don't sub-sample z
+                sampler = (slice(None, None, None),) + sampler
         data = data[sampler]
 
         return data
 
-    def groupby_3d_tiles():
-        logger.info("3D tiling dataset")
-        layers = []
-        for tz, tile_xy in ds.groupby(["tile_z"]):
-            layer = []
-            for ty, tile_x in tile_xy.groupby("tile_y"):
-                row = []
-                for tx, tile in tile_x.groupby("tile_x"):
-                    row.append(retrieve(tile))
-                layer.append(row)
-            layers.append(layer)
-        return layers
+    def groupby_tiles(inventory, index: List[str]):
+        """
+        Aggregation function that generates the proper internal list layout for all the tiles in their natural N-D layout.
 
-    def groupby_2d_tiles():
-        logger.info("2D tiling dataset")
-        layer = []
-        for ty, tile_x in ds.groupby("tile_y"):
-            row = []
-            for tx, tile in tile_x.groupby("tile_x"):
-                row.append(retrieve(tile))
-            layer.append(row)
-        return layer
+        Args:
+            inventory (pd.DataFrame): the listing inventory
+            index (list of str): the column header
+        """
+        tiles = []
+        for _, tile in inventory.groupby(index[0]):
+            if len(index) > 0:
+                # we are not at the fastest dimension yet, decrease 1 level
+                tiles.append(groupby_tiles(tile, index[1:]))
+            else:
+                # fastest dimension, call retrieval function
+                tiles.append(retrieve(tile))
+        return tiles
 
+    index = ["tile_y", "tile_x"]
     if "tile_z" in ds.index.names:
-        groupby = groupby_3d_tiles
-    else:
-        groupby = groupby_2d_tiles
-    preview = da.block(groupby())
+        index = ["tile_z"] + index
+    preview = da.block(groupby_tiles(ds, index))
 
     return preview
 
@@ -90,7 +87,8 @@ def load_dataset(src_dir, remap, flip):
 @click.option("-r", "--remap", type=str, default="xyz")
 @click.option("-f", "--flip", type=str, default="")
 @click.option("-h", "--host", type=str, default="10.109.20.6:8786")
-def main(src_dir, dst_dir, remap, flip, host):
+@click.option("-m", "--mip", default=False, is_flag=True)
+def main(src_dir, dst_dir, remap, flip, host, mip):
     logging.getLogger("tifffile").setLevel(logging.ERROR)
     coloredlogs.install(
         level="DEBUG", fmt="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S"
@@ -138,7 +136,7 @@ def main(src_dir, dst_dir, remap, flip, host):
     print(src_ds.inventory)
 
     # create directives
-    preview = run(src_ds)
+    preview = run(src_ds, mip=mip)
     logger.info(f"final preview {preview.shape}, {preview.dtype}")
 
     logger.info(f'saving preivew to "{dst_dir}"')
@@ -164,4 +162,3 @@ def main(src_dir, dst_dir, remap, flip, host):
         logger.info(f"keyboard interrupted")
     finally:
         client.close()
-
