@@ -6,7 +6,8 @@ import click
 import coloredlogs
 import dask.array as da
 import imageio
-from dask.distributed import Client, LocalCluster
+import zarr
+from dask.distributed import Client, LocalCluster, progress
 from tqdm import tqdm
 
 from utoolbox.cli.prompt import prompt_options
@@ -41,8 +42,7 @@ def run(ds, size_limit=4096, mip=False):
             else:
                 # normally, we don't sub-sample z
                 sampler = (slice(None, None, None),) + sampler
-        # data = data[sampler]
-        data = data[sampler].persist()  # FIXME will this work? force early computation
+        data = data[sampler]
 
         return data
 
@@ -56,7 +56,7 @@ def run(ds, size_limit=4096, mip=False):
         """
         tiles = []
         for _, tile in inventory.groupby(index[0]):
-            if len(index) > 0:
+            if len(index) > 1:
                 # we are not at the fastest dimension yet, decrease 1 level
                 tiles.append(groupby_tiles(tile, index[1:]))
             else:
@@ -68,6 +68,8 @@ def run(ds, size_limit=4096, mip=False):
     if "tile_z" in ds.index.names:
         index = ["tile_z"] + index
     logger.info(f"a {len(index)}-D tiled dataset")
+
+    # pack as a huge array
     preview = da.block(groupby_tiles(ds, index))
 
     return preview
@@ -137,28 +139,49 @@ def main(src_dir, dst_dir, remap, flip, host, mip):
     # preview summary
     print(src_ds.inventory)
 
-    # create directives
-    preview = run(src_ds, mip=mip)
-    logger.info(f"final preview {preview.shape}, {preview.dtype}")
-
-    logger.info(f'saving preivew to "{dst_dir}"')
-    try:
-        os.makedirs(dst_dir)
-    except FileExistsError:
-        logger.warning(f'"{dst_dir}" exists')
-        pass
-
     if host == "local":
         client = LocalCluster()
     else:
         client = Client(host)
     logger.info(client)
 
+    # create directives
+    preview = run(src_ds, mip=mip)
+    logger.info(f"final preview {preview.shape}, {preview.dtype}")
+
+    # saving the result to zarr format
+    zarr_path = f"{dst_dir.rstrip(os.sep)}.zarr"
+    chunks = (8, 512, 512)
+    logger.info(f'generating "{os.path.basename(zarr_path)}"')
+    logger.debug(f"shape={preview.shape}, dtype={preview.dtype}, chunks={chunks}")
+
+    zarr_preview = zarr.open(
+        zarr_path, mode="a", shape=preview.shape, chunks=chunks, dtype=preview.dtype
+    )
+
+    def block_write(block, block_info=None):
+        # build slice
+        loc = block_info[None]["array-location"]
+        print(loc)
+        loc = tuple(slice(start, end) for start, end in loc)
+        # write to zarr
+        zarr_preview[tuple(loc)] = block
+        return block
+
+    preview = preview.rechunk(chunks)
+    da.map_blocks(block_write, preview, dtype=preview.dtype).compute()
+
+    logger.info(f'saving layered preivew to "{dst_dir}"')
     try:
-        pbar = tqdm(enumerate(preview), total=preview.shape[0])
+        os.makedirs(dst_dir)
+    except FileExistsError:
+        logger.warning(f'"{dst_dir}" exists')
+        pass
+
+    try:
+        pbar = tqdm(enumerate(zarr_preview), total=preview.shape[0])
         for i, layer in pbar:
             pbar.set_description(f"layer {i+1}")
-            layer = layer.compute()
             imageio.imwrite(os.path.join(dst_dir, f"layer_{i+1:04d}.tif"), layer)
     except KeyboardInterrupt:
         logger.info(f"keyboard interrupted")
