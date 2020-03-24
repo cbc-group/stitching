@@ -183,11 +183,14 @@ def main(src_dir, dst_dir, remap, flip, host, mip):
         pass
 
     write_back_tasks = []
-    for i, layer in enumerate(zarr_preview):
-        fname = f"layer_{i+1:04d}.tif"
-        path = os.path.join(dst_dir, fname)
-        future = delayed(imageio.imwrite)(path, layer)
-        write_back_tasks.append(future)
+    with tqdm(total=len(zarr_preview.shape[0])) as pbar:
+        for i, layer in enumerate(zarr_preview):
+            fname = f"layer_{i+1:04d}.tif"
+            pbar.set_description(fname)
+            path = os.path.join(dst_dir, fname)
+            future = delayed(imageio.imwrite)(path, layer)
+            write_back_tasks.append(future)
+            pbar.update(1)
 
     # submit tasks
     futures = client.compute(write_back_tasks, scheduler="processes")
