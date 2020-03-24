@@ -7,7 +7,8 @@ import coloredlogs
 import dask.array as da
 import imageio
 import zarr
-from dask.distributed import Client, LocalCluster, progress
+from dask import delayed
+from dask.distributed import Client, LocalCluster, as_completed
 from tqdm import tqdm
 
 from utoolbox.cli.prompt import prompt_options
@@ -171,6 +172,9 @@ def main(src_dir, dst_dir, remap, flip, host, mip):
     preview = preview.rechunk(chunks)
     da.map_blocks(block_write, preview, dtype=preview.dtype).compute()
 
+    logger.info("release data")
+    del preview
+
     logger.info(f'saving layered preivew to "{dst_dir}"')
     try:
         os.makedirs(dst_dir)
@@ -178,12 +182,23 @@ def main(src_dir, dst_dir, remap, flip, host, mip):
         logger.warning(f'"{dst_dir}" exists')
         pass
 
-    try:
-        pbar = tqdm(enumerate(zarr_preview), total=preview.shape[0])
-        for i, layer in pbar:
-            pbar.set_description(f"layer {i+1}")
-            imageio.imwrite(os.path.join(dst_dir, f"layer_{i+1:04d}.tif"), layer)
-    except KeyboardInterrupt:
-        logger.info(f"keyboard interrupted")
-    finally:
-        client.close()
+    write_back_tasks = []
+    for i, layer in enumerate(zarr_preview):
+        fname = f"layer_{i+1:04d}.tif"
+        path = os.path.join(dst_dir, fname)
+        future = delayed(imageio.imwrite)(path, layer)
+        write_back_tasks.append(future)
+
+    # submit tasks
+    futures = client.compute(write_back_tasks, scheduler="processes")
+    with tqdm(total=len(futures)) as pbar:
+        for future in as_completed(futures, with_results=False):
+            try:
+                future.result()  # ensure we do not have an exception
+                pbar.update(1)
+            except Exception as error:
+                logger.exception(error)
+            future.release()
+
+    logger.info("closing scheduler connection")
+    client.close()
