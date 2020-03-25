@@ -201,7 +201,9 @@ def main(src_dir, dst_dir, remap, flip, host, mip):
             pbar.update(1)
 
     # submit tasks
-    with tqdm(total=len(futures)) as pbar:
+    with tqdm(
+        total=len(futures), bar_format="{l_bar}{bar:24}{r_bar}{bar:-10b}"
+    ) as pbar:
         for future in as_completed(futures, with_results=False):
             try:
                 future.result()  # ensure we do not have an exception
