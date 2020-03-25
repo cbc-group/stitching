@@ -155,10 +155,6 @@ def main(src_dir, dst_dir, remap, flip, host, mip):
     logger.info(f'generating "{os.path.basename(zarr_path)}"')
     logger.debug(f"shape={preview.shape}, dtype={preview.dtype}, chunks={chunks}")
 
-    zarr_preview = zarr.open(
-        zarr_path, mode="a", shape=preview.shape, chunks=chunks, dtype=preview.dtype
-    )
-
     def block_write(block, block_info=None):
         # build slice
         loc = block_info[None]["array-location"]
@@ -168,13 +164,19 @@ def main(src_dir, dst_dir, remap, flip, host, mip):
         zarr_preview[tuple(loc)] = block
         return block
 
-    if os.path.exists(zarr_path):
-        logger.warning("found existing zarr store, reusing it")
-    else:
+    try:
+        zarr_preview = zarr.open(
+            zarr_path, mode="x", shape=preview.shape, chunks=chunks, dtype=preview.dtype
+        )
         preview = preview.rechunk(chunks)
         da.map_blocks(block_write, preview, dtype=preview.dtype).compute()
-
-    logger.info("release data")
+    except ValueError:
+        logger.warning("found existing zarr store, reusing it")
+        zarr_preview = zarr.open(
+            zarr_path, mode="r", shape=preview.shape, chunks=chunks, dtype=preview.dtype
+        )
+    
+    logger.info("release dask array")
     del preview
 
     logger.info(f'saving layered preivew to "{dst_dir}"')
