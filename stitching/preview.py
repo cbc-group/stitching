@@ -169,6 +169,7 @@ def main(src_dir, dst_dir, remap, flip, host, mip):
             zarr_path, mode="x", shape=preview.shape, chunks=chunks, dtype=preview.dtype
         )
         preview = preview.rechunk(chunks)
+        # TODO use .to_zarr() to save the block, use rechunk first
         future = da.map_blocks(block_write, preview, dtype=preview.dtype).compute()
         progress(future)
     except ValueError:
