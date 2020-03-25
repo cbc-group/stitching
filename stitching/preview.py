@@ -195,7 +195,7 @@ def main(src_dir, dst_dir, remap, flip, host, mip):
             fname = f"layer_{i+1:04d}.tif"
             pbar.set_description(fname)
             path = os.path.join(dst_dir, fname)
-            future = dask.submit(imageio.imwrite, path, layer)
+            future = client.submit(imageio.imwrite, path, layer)
             futures.append(future)
             pbar.update(1)
 
