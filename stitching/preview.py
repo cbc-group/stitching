@@ -7,6 +7,7 @@ import coloredlogs
 import dask.array as da
 import imageio
 import zarr
+import dask
 from dask import delayed
 from dask.distributed import Client, LocalCluster, as_completed
 from tqdm import tqdm
@@ -169,8 +170,11 @@ def main(src_dir, dst_dir, remap, flip, host, mip):
         zarr_preview[tuple(loc)] = block
         return block
 
-    preview = preview.rechunk(chunks)
-    da.map_blocks(block_write, preview, dtype=preview.dtype).compute()
+    if os.path.exists(zarr_path):
+        logger.warning('found existing zarr store, reusing it')
+    else:
+        preview = preview.rechunk(chunks)
+        da.map_blocks(block_write, preview, dtype=preview.dtype).compute()
 
     logger.info("release data")
     del preview
@@ -182,18 +186,20 @@ def main(src_dir, dst_dir, remap, flip, host, mip):
         logger.warning(f'"{dst_dir}" exists')
         pass
 
-    write_back_tasks = []
-    with tqdm(total=len(zarr_preview.shape[0])) as pbar:
-        for i, layer in enumerate(zarr_preview):
+    logger.info(f"reload data from zarr")
+    preview = da.from_zarr(zarr_preview)
+
+    futures = []
+    with tqdm(total=len(preview.shape[0])) as pbar:
+        for i, layer in enumerate(preview):
             fname = f"layer_{i+1:04d}.tif"
             pbar.set_description(fname)
             path = os.path.join(dst_dir, fname)
-            future = delayed(imageio.imwrite)(path, layer)
-            write_back_tasks.append(future)
+            future = dask.submit(imageio.imwrite, path, layer)
+            futures.append(future)
             pbar.update(1)
 
     # submit tasks
-    futures = client.compute(write_back_tasks, scheduler="processes")
     with tqdm(total=len(futures)) as pbar:
         for future in as_completed(futures, with_results=False):
             try:
