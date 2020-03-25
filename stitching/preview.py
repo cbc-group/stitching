@@ -6,14 +6,12 @@ import click
 import coloredlogs
 import dask.array as da
 import imageio
-import zarr
-import dask
-from dask import delayed
 from dask.distributed import Client, LocalCluster, as_completed
 from tqdm import tqdm
-
 from utoolbox.cli.prompt import prompt_options
 from utoolbox.io.dataset import open_dataset
+
+import zarr
 
 logger = logging.getLogger(__name__)
 
@@ -171,7 +169,7 @@ def main(src_dir, dst_dir, remap, flip, host, mip):
         return block
 
     if os.path.exists(zarr_path):
-        logger.warning('found existing zarr store, reusing it')
+        logger.warning("found existing zarr store, reusing it")
     else:
         preview = preview.rechunk(chunks)
         da.map_blocks(block_write, preview, dtype=preview.dtype).compute()
