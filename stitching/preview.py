@@ -6,7 +6,7 @@ import click
 import coloredlogs
 import dask.array as da
 import imageio
-from dask.distributed import Client, LocalCluster, as_completed
+from dask.distributed import Client, LocalCluster, as_completed, progress
 from tqdm import tqdm
 from utoolbox.cli.prompt import prompt_options
 from utoolbox.io.dataset import open_dataset
@@ -169,13 +169,14 @@ def main(src_dir, dst_dir, remap, flip, host, mip):
             zarr_path, mode="x", shape=preview.shape, chunks=chunks, dtype=preview.dtype
         )
         preview = preview.rechunk(chunks)
-        da.map_blocks(block_write, preview, dtype=preview.dtype).compute()
+        future = da.map_blocks(block_write, preview, dtype=preview.dtype).compute()
+        progress(future)
     except ValueError:
         logger.warning("found existing zarr store, reusing it")
         zarr_preview = zarr.open(
             zarr_path, mode="r", shape=preview.shape, chunks=chunks, dtype=preview.dtype
         )
-    
+
     logger.info("release dask array")
     del preview
 
