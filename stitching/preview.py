@@ -190,7 +190,7 @@ def main(src_dir, dst_dir, remap, flip, host, mip):
     preview = da.from_zarr(zarr_preview)
 
     futures = []
-    with tqdm(total=len(preview.shape[0])) as pbar:
+    with tqdm(total=preview.shape[0]) as pbar:
         for i, layer in enumerate(preview):
             fname = f"layer_{i+1:04d}.tif"
             pbar.set_description(fname)
