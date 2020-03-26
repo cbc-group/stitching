@@ -18,10 +18,11 @@ class Layout(object):
         logger.info(f"({desc}) tiles")
 
     @classmethod
-    def from_layout(cls, tile_shape, direction, data_shape, overlap, snake=False):
+    def from_layout(cls, tile_shape, axis_order, direction, data_shape, overlap, snake=False):
         """
         Args:
             tile_shape (tuple of int): number of tiles in each dimension
+            axis_order (string): string of any ordering of 'x', 'y', 'z'
             direction (tuple of int): tiling direction, describe by +/-1
             data_shape (tuple of int): shape of a single tile
             overlap (float or tuple of float): overlap ratio in each dimension
@@ -31,11 +32,23 @@ class Layout(object):
             # requires direction toggling
             direction = list(direction)
 
-        overlap = tuple(overlap)
+        if isinstance(overlap, float):
+            overlap  = (overlap,)
         if len(overlap) == 1:
             overlap *= len(tile_shape)  # expand to fit ndims
         # shrink shape by overlap ratio
         data_shape = tuple(s * (1 - o) for s, o in zip(data_shape, overlap))
+
+        # axis_order: remove 'z' axis for 2D, and translate to axisid
+        if (len(tile_shape) <= 2):
+            axis_order = axis_order.replace("z", "")
+            axisid = { 'x':1, 'y':0 }
+        else:
+            axisid = { 'x':2, 'y':1, 'z':0 }
+        axis_order = [ axisid[lab] for lab in list(axis_order) ]
+
+        # convert tile_shape from (Nx,Ny,Nz) to (Nz,Ny,Nx)
+        tile_shape = tile_shape[::-1]
 
         def step(index, axis):
             overflow = True
@@ -61,27 +74,28 @@ class Layout(object):
                 overflow = False
             return index, overflow
 
-        def walk(index, axis):
+        def walk(index, axis_order, aidx):
             while True:
                 yield tuple(index)
-                index, overflow = step(index, axis)
+                index, overflow = step(index, axis_order[aidx])
                 if overflow:
                     # current axis overflow
-                    for _axis in range(axis - 1, -1, -1):
-                        index, overflow = step(index, _axis)
+                    for _aidx in range(1, len(axis_order)):
+                        index, overflow = step(index, axis_order[_aidx])
                         if not overflow:
                             break
                     else:
                         return
 
         # index cursor
-        i_cursor = [t - 1 if d < 0 else 0 for t, d in zip(tile_shape, direction)]
+        i_cursor = [t-1 if d < 0 else 0 for t, d in zip(tile_shape, direction)]
         logger.debug(f"cursor init index {tuple(i_cursor)}")
         # create index maps
-        indices = [c for c in walk(i_cursor, len(tile_shape) - 1)]
+        aidx    = 0
+        indices = [c for c in walk(i_cursor, axis_order, aidx)]
 
         # multiply tile shapes to get pixel coordinates
-        coords = [tuple(ii * s for ii, s in zip(i, data_shape)) for i in indices]
+        coords = [tuple(ii*s for ii, s in zip(i, data_shape)) for i in indices]
 
         # create instance
         return cls(indices, coords)

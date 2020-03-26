@@ -30,6 +30,7 @@ logger.info(f"loaded {len(files)} tiles")
 coords = pd.read_csv(os.path.join(ds_dir, "coords.csv"), names=["x", "y", "z"])
 coords *= 1000 / 0.155  # px/unit
 layout = Layout.from_layout((35, 40), (1, 1), (), 0.1, False)
+layout._coords = coords
 
 viewer = Viewer()
 viewer.show()
