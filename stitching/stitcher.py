@@ -69,9 +69,9 @@ class Stitcher(object):
             except TypeError:
                 h = _h
 
-#       n_pixels = np.sum(h)
-        n_pixels = self.collection.tiles[0].size
-        assert n_pixels > 0, "number of pixels should be greater than 0"
+#       n_pixels = self.collection.tiles[0].size
+#       assert n_pixels > 0, "number of pixels should be greater than 0"
+        n_pixels = np.sum(h)
         limit, threshold = n_pixels / 10, n_pixels / 5000
 
         # find min
