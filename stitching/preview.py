@@ -156,7 +156,7 @@ def main(src_dir, dst_dir, remap, flip, host, mip):
     logger.debug(f"shape={preview.shape}, dtype={preview.dtype}, chunks={chunks}")
 
     try:
-        logger.info('dumping to zarr directory store, waiting...s')
+        logger.info("dumping to zarr directory store, waiting...s")
         preview = preview.rechunk(chunks)
         da.to_zarr(preview, zarr_path, overwrite=False)
     except ValueError:
