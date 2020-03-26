@@ -155,28 +155,12 @@ def main(src_dir, dst_dir, remap, flip, host, mip):
     logger.info(f'generating "{os.path.basename(zarr_path)}"')
     logger.debug(f"shape={preview.shape}, dtype={preview.dtype}, chunks={chunks}")
 
-    def block_write(block, block_info=None):
-        # build slice
-        loc = block_info[None]["array-location"]
-        print(loc)
-        loc = tuple(slice(start, end) for start, end in loc)
-        # write to zarr
-        zarr_preview[tuple(loc)] = block
-        return block
-
     try:
-        zarr_preview = zarr.open(
-            zarr_path, mode="x", shape=preview.shape, chunks=chunks, dtype=preview.dtype
-        )
+        logger.info('dumping to zarr directory store, waiting...s')
         preview = preview.rechunk(chunks)
-        # TODO use .to_zarr() to save the block, use rechunk first
-        future = da.map_blocks(block_write, preview, dtype=preview.dtype).compute()
-        progress(future)
+        da.to_zarr(preview, zarr_path, overwrite=False)
     except ValueError:
         logger.warning("found existing zarr store, reusing it")
-        zarr_preview = zarr.open(
-            zarr_path, mode="r", shape=preview.shape, chunks=chunks, dtype=preview.dtype
-        )
 
     logger.info("release dask array")
     del preview
@@ -189,7 +173,7 @@ def main(src_dir, dst_dir, remap, flip, host, mip):
         pass
 
     logger.info(f"reload data from zarr")
-    preview = da.from_zarr(zarr_preview)
+    preview = da.from_zarr(zarr_path)
 
     futures = []
     with tqdm(total=preview.shape[0]) as pbar:
