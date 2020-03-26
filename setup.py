@@ -16,6 +16,8 @@ setup(
     install_requires=[
         "click",
         "coloredlogs",
+        "dask~=2.12.0",
+        "distributed~=2.12.0",
         "imageio",
         "numpy",
         "pandas",
