@@ -117,10 +117,6 @@ class Layout(object):
         # reorder columns
         coords = coords[headers]
 
-        # convert real scale to rank
-        ranks = coords.rank(axis="index", method="dense")
-        ranks = ranks.astype(int) - 1
-
         # pack as list of tuples
         coords = [tuple(c.values.astype(np.float32)) for _, c in coords.iterrows()]
 
