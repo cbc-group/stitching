@@ -101,7 +101,7 @@ class Layout(object):
         return cls(indices, coords)
 
     @classmethod
-    def from_coords(cls, coords):
+    def from_coords(cls, coords, maxshift=10):
         """
         Args:
             coords (pd.DataFrame): coordinates in pixels
@@ -122,8 +122,26 @@ class Layout(object):
         ranks = ranks.astype(int) - 1
 
         # pack as list of tuples
-        indices = [tuple(r.values.astype(np.uint16)) for _, r in ranks.iterrows()]
         coords = [tuple(c.values.astype(np.float32)) for _, c in coords.iterrows()]
+
+        # fix indices to be the tile ranks
+        def _coord_to_indices(_coords, _maxshift):
+            ndim = len(_coords[0])
+            idxs = []
+            for i in range(ndim):
+                cs = sorted([coord[i] for coord in _coords])
+                c0 = cs[0]
+                ds = []
+                i0 = 0
+                for cc in cs:
+                    i0 += (cc-c0 > _maxshift)
+                    ds.append(i0)
+                    c0 = cc
+                idx = tuple(ds[cs.index(coord[i])] for coord in _coords)
+                idxs.append(idx)
+            return [i for i in zip(*idxs)]
+
+        indices = _coord_to_indices(coords, maxshift)
 
         # create instance
         return cls(indices, coords)
