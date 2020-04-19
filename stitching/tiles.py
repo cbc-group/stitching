@@ -162,18 +162,20 @@ class TileCollection(object):
 
     ##
 
-    def neighbor_of(self, tile):
+    def neighbor_of(self, tile, nn='all'):
         """
         Args:
             tile (list of [Tile or tuple of int]): tile to query
+            nn (string): 'all': all neighbors; 'next': neighbor next to me.
         
         Returns:
             (list of [Tile or tuple of int])
         """
+        assert (nn == 'all' or a == 'next'), "invalid nn value"
         if isinstance(tile, Tile):
             index = tile.index
         logger.debug(f"reference index {index}")
-        nnindex = self.neighbors[index]
+        nnindex = self.neighbors[index] if (nn == 'all') else self.neighbors_next[index]
         if isinstance(tile, Tile):
             # de-reference
             return [self[i] for i in nnindex]
@@ -186,15 +188,18 @@ class TileCollection(object):
         tile_shape = self.layout.tile_shape
 
         neighbors = dict()
+        neighbors_next = dict()
         for index in self.layout.indices:
             nn = []
+            nnn = []
             for i, n in enumerate(tile_shape):
-                # prev
+                # next
                 if index[i] + 1 < n:
                     nnindex = list(index)
                     nnindex[i] += 1
                     nn.append(tuple(nnindex))
-                # next
+                    nnn.append(tuple(nnindex))
+                # prev
                 if index[i] - 1 >= 0:
                     nnindex = list(index)
                     nnindex[i] -= 1
@@ -202,6 +207,8 @@ class TileCollection(object):
 
             # save neighbors for current index
             neighbors[index] = nn
+            neighbors_next[index] = nnn
 
         self._neighbors = neighbors
+        self._neighbors_next = neighbors_next
 
