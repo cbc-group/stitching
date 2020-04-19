@@ -94,7 +94,20 @@ class Stitcher(object):
         for tile in self.collection.tiles:
             tile.handle.setLevels(min_max)
 
-    def fuse(self):
-        pass
+    def fuse(self, outdir, chunk_shape, compressor):
+        # get the shape of the whole volume.
+        tile_shape = self.collection.layout.tile_shape
+        last_tidx = tuple(i-1 for i in tile_shape)
+        last_tile = self.collection._tiles[last_tidx]
+        vol_shape = tuple(np.round(last_tile.coord).astype(int) + last_tile.data.shape)
+        vol = zarr.open(
+            outdir,
+            mode="w",
+            shape=vol_shape,
+            chunks=chunk_shape,
+            dtype="u2",
+            compressor=compressor
+        )
 
+        # paste tiles into vol.
     ##
