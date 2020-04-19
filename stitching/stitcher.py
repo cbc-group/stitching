@@ -111,14 +111,24 @@ class Stitcher(object):
             compressor=compressor
         )
         tiles = self.collection.tiles
-
-        #
-        # handling overlapped regions of tiles with their neighbors.
-        #
+        tile_pxlmean = []
+        tile_pxlstd = []
+        tile_nnfit = []
+        for tile in tiles:
+            tile_pxlmean.append(tile.data)
+            tile_pxlstd.append(tile.data)
+            tile_nnfit.append(self._fuse_match_nn(tile))
 
         # paste tiles into vol.
         for tile in tiles:
             self._fuse_tile(vol, tile)
+
+    def _fuse_match_nn(self, ref_tile):
+        nn_tiles = self.collection.neighbor_of(ref_tile, nn='next')
+        for nn_tile in nn_tiles:
+            ref_roi, ref_raw = ref_tile.overlap_roi(nn_tile, return_raw_roi=True
+)
+            nn_roi, nn_raw = nn_tile.overlap_roi(ref_tile, return_raw_roi=True)
 
     def _fuse_tile(self, vol, tile):
         data = tile.data
