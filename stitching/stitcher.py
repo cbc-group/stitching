@@ -1,6 +1,8 @@
 import logging
 
 import numpy as np
+import zarr
+from scipy.interpolate import RegularGridInterpolator
 from skimage.feature import register_translation
 
 __all__ = ["Stitcher"]
@@ -109,5 +111,31 @@ class Stitcher(object):
             compressor=compressor
         )
 
+        #
+        # handling overlapped regions of tiles with their neighbors.
+        #
+
         # paste tiles into vol.
+        tiles = self.collection.tiles
+        for tile in tiles:
+            _fuse_tile(vol, tile)
+
+    def _fuse_tile(vol, tile):
+        data = tile.data
+        dshape = data.shape
+        coord0 = tile.coord
+        axes_mesh0 = tuple(np.linspace(x,x+L-1,L) for x, L in zip(coord0, dshape))
+        fusefunc = RegularGridInterpolator(axes_mesh0, data, bounds_error=False, fill_value=None)
+
+        coord1 = tuple(np.round(x).astype(int) for x in coord0)
+        mesh1 = np.meshgrid(*tuple(np.linspace(x,x+L-1,L) for x, L in zip(coord1, dshape)), indexing='ij')
+        pts1 = [ pt for pt in zip(*(x.flat for x in mesh1)) ]
+        pxls1 = fusefunc(pts1).reshape(dshape)
+        if (len(dshape) == 2):
+            vol[coord1[0]:coord1[0]+dshape[0],
+                coord1[1]:coord1[1]+dshape[1]] = pxls1
+        else:
+            vol[coord1[0]:coord1[0]+dshape[0],
+                coord1[1]:coord1[1]+dshape[1],
+                coord1[2]:coord1[2]+dshape[2]] = pxls1
     ##
