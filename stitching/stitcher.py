@@ -110,17 +110,17 @@ class Stitcher(object):
             dtype="u2",
             compressor=compressor
         )
+        tiles = self.collection.tiles
 
         #
         # handling overlapped regions of tiles with their neighbors.
         #
 
         # paste tiles into vol.
-        tiles = self.collection.tiles
         for tile in tiles:
-            _fuse_tile(vol, tile)
+            self._fuse_tile(vol, tile)
 
-    def _fuse_tile(vol, tile):
+    def _fuse_tile(self, vol, tile):
         data = tile.data
         dshape = data.shape
         coord0 = tile.coord
