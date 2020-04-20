@@ -2,6 +2,7 @@ import logging
 
 import numpy as np
 import zarr
+from scipy.stats import linregress
 from scipy.interpolate import RegularGridInterpolator
 from skimage.feature import register_translation
 
@@ -125,10 +126,18 @@ class Stitcher(object):
 
     def _fuse_match_nn(self, ref_tile):
         nn_tiles = self.collection.neighbor_of(ref_tile, nn='next')
+        afit = []
+        bfit = []
         for nn_tile in nn_tiles:
-            ref_roi, ref_raw = ref_tile.overlap_roi(nn_tile, return_raw_roi=True
-)
+            ref_roi, ref_raw = ref_tile.overlap_roi(nn_tile, return_raw_roi=True)
             nn_roi, nn_raw = nn_tile.overlap_roi(ref_tile, return_raw_roi=True)
+            ref_raw = ref_raw.reshape(ref_raw.size)
+            nn_raw = nn_raw.reshape(nn_raw.size)
+            slope, intercept, r_value, p_value, std = linregress(nn_raw,ref_raw)
+            afit.append(slope)
+            bfit.append(intercept)
+        nnfit = { 'afit': afit, 'bfit': 'bfit }
+        return nnfit
 
     def _fuse_tile(self, vol, tile):
         data = tile.data
