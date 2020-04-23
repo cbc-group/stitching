@@ -131,8 +131,8 @@ class Stitcher(object):
         for nn_tile in nn_tiles:
             ref_roi, ref_raw = ref_tile.overlap_roi(nn_tile, return_raw_roi=True)
             nn_roi, nn_raw = nn_tile.overlap_roi(ref_tile, return_raw_roi=True)
-            ref_raw = ref_raw.reshape(ref_raw.size)
-            nn_raw = nn_raw.reshape(nn_raw.size)
+            ref_raw = np.ravel(ref_raw)
+            nn_raw = np.ravel(nn_raw)
             slope, intercept, r_value, p_value, std = linregress(nn_raw,ref_raw)
             afit.append(slope)
             bfit.append(intercept)
