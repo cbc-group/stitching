@@ -112,12 +112,15 @@ class Stitcher(object):
             compressor=compressor
         )
         tiles = self.collection.tiles
-        tile_pxlmean = []
-        tile_pxlstd = []
+        tile_pxlsum = []
+        tile_pxlssum = []
         tile_nnfit = []
         for tile in tiles:
-            tile_pxlmean.append(tile.data)
-            tile_pxlstd.append(tile.data)
+            sum, ssum = 0.0, 0.0
+            for px in tile.data.flat:
+                sum, ssum = sum+float(px), ssum+float(px*px)
+            tile_pxlsum.append(sum)
+            tile_pxlssum.append(ssum)
             tile_nnfit.append(self._fuse_match_nn(tile))
 
         # paste tiles into vol.
@@ -136,7 +139,7 @@ class Stitcher(object):
             slope, intercept, r_value, p_value, std = linregress(nn_raw,ref_raw)
             afit.append(slope)
             bfit.append(intercept)
-        nnfit = { 'afit': afit, 'bfit': 'bfit }
+        nnfit = { 'afit': afit, 'bfit': bfit }
         return nnfit
 
     def _fuse_tile(self, vol, tile):
