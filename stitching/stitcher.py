@@ -126,6 +126,7 @@ class Stitcher(object):
         first_tile._pxladj_a = 1.0
         first_tile._pxladj_b = 0.0
         self._fuse_para_adjust(fist_tile, 0)
+        self._fuse_pxl_adjust()
 
         # paste tiles into vol.
         for tile in tiles:
@@ -183,6 +184,35 @@ class Stitcher(object):
                 _fuse_pxladjust(self, ref_tile, idir+1)
             nn_tiles = self.collection.neighbor_of(ref_tile, nn='next')
 
+    def _fuse_pxl_adjust(self):
+        tiles = self.collection.tiles
+        pxls_mean = []
+        pxls_std = []
+        pxlsum0 = 0.0
+        pxlssum0 = 0.0
+        npxl0 = 0
+        for tile in tiles:
+            npxl = tile.data.size
+            npxl0 += npxl
+            pxlsum0 += tile._pxlsum
+            pxlssum0 += tile._pxlssum
+            pxls_mean.append(tile._pxlsum/npxl)
+            pxls_std.append(sqrt(tile._pxlssum/npxl-(tile._pxlsum/npxl)**2))
+        # total mean and std of the current whole volume.
+        pxlmean0 = pxlsum0 / npxl0
+        pxlstd0 = sqrt(pxlssum0/nxpl - pxlmean0**2)
+        # the target mean and std to adjust of the whole volume.
+        pxlmean1 = np.median(np.asarray(pxls_mean))
+        pxlstd1 = np.amax(np.asarray(pxls_std))
+
+        for tile in tiles:
+            afit = tile._pxladj_a
+            bfit = tile._pxladj_b
+            data = tiles.data
+            for i, p in enumerate(data.flat):
+                p = (afit*p+bfit - pxlmean0)/pxlstd0 * pxlstd1 + pxlmean1
+                (data.flat)[i] = np.round(p).astype(np.uint16)
+
     def _fuse_tile(self, vol, tile):
         data = tile.data
         dshape = data.shape
@@ -193,7 +223,7 @@ class Stitcher(object):
         coord1 = tuple(np.round(x).astype(int) for x in coord0)
         mesh1 = np.meshgrid(*tuple(np.linspace(x,x+L-1,L) for x, L in zip(coord1, dshape)), indexing='ij')
         pts1 = [ pt for pt in zip(*(x.flat for x in mesh1)) ]
-        pxls1 = np.round(fusefunc(pts1)).astype(np.int16).reshape(dshape)
+        pxls1 = np.round(fusefunc(pts1)).astype(np.uint16).reshape(dshape)
         if (len(dshape) == 2):
             vol[coord1[0]:coord1[0]+dshape[0],
                 coord1[1]:coord1[1]+dshape[1]] = pxls1
