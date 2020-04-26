@@ -112,16 +112,20 @@ class Stitcher(object):
             compressor=compressor
         )
         tiles = self.collection.tiles
-        tile_pxlsum = []
-        tile_pxlssum = []
-        tile_nnfit = []
         for tile in tiles:
             sum, ssum = 0.0, 0.0
             for px in tile.data.flat:
                 sum, ssum = sum+float(px), ssum+float(px*px)
-            tile_pxlsum.append(sum)
-            tile_pxlssum.append(ssum)
-            tile_nnfit.append(self._fuse_match_nn(tile))
+            tile._pxlsum = sum
+            tile._pxlssum = ssum
+            tile._nnfit = self._fuse_match_nn(tile)
+
+        # adjust tile pixels sequencially starting from the first tile
+        first_tidx = (0,0) if (len(tile_shape) < 3) else (0,0,0)
+        first_tile = tiles[first_tidx]
+        first_tile._pxladj_a = 1.0
+        first_tile._pxladj_b = 0.0
+        self._fuse_para_adjust(fist_tile, 0)
 
         # paste tiles into vol.
         for tile in tiles:
@@ -141,6 +145,43 @@ class Stitcher(object):
             bfit.append(intercept)
         nnfit = { 'afit': afit, 'bfit': bfit }
         return nnfit
+
+    def _fuse_para_adjust(self, ref_tile, idir):
+        maxdir = len(self.collection.layout.tile_shape)-1
+        nn_tiles = self.collection.neighbor_of(ref_tile, nn='next')
+        while (len(nn_tiles) > 0):
+            # myself pixel-adjust parameter
+            afit0 = ref_tile._pxladj_a
+            bfit0 = ref_tile._pxladj_b
+            # next tile index along idir direction
+            next_tile = None
+            next_tidx = ref_tile.index
+            next_tidx[idir] ++;
+
+            for ii, nn_tile in enumerate(nn_tiles):
+                # adjust pixel-adjust parameters of neighboring tiles
+                afit = ref_tile._nnfit['afit'][ii]
+                bfit = ref_tile._nnfit['bfit'][ii]
+                ref_tile._nnfit['afit'][ii] = afit*afit0
+                ref_tile._nnfit['bfit'][ii] = afit*bfit0 + bfit
+                # adjust pixel sum & ssum of neighboring along idir direction
+                if (nn_tile.index == next_tidx):
+                    next_tile = nn_tile
+                    npxl = nn_tile.data.size
+                    pxls = nn_tile._pxlsum
+                    pxlss = nn_tile._pxlssum
+                    afit = ref_tile._nnfit['afit'][ii]
+                    bfit = ref_tile._nnfit['bfit'][ii]
+                    nn_tile._pxladj_a = afit
+                    nn_tile._pxladj_b = bfit
+                    nn_tile._pxlsum = afit*pxls + npxl*bfit
+                    nn_tile._pxlssum = afit**2*pxlss + 2.0*afit*bfit*pxls + npxi*bfit**2
+            if (next_tile == None):
+                break
+            ref_tile = next_tile
+            if (idir < maxdir):
+                _fuse_pxladjust(self, ref_tile, idir+1)
+            nn_tiles = self.collection.neighbor_of(ref_tile, nn='next')
 
     def _fuse_tile(self, vol, tile):
         data = tile.data
