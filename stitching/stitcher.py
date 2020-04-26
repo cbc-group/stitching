@@ -156,8 +156,7 @@ class Stitcher(object):
             bfit0 = ref_tile._pxladj_b
             # next tile index along idir direction
             next_tile = None
-            next_tidx = ref_tile.index
-            next_tidx[idir] ++;
+            next_tidx = tuple(x+1 if i==idir else x for i,x in enumerate(ref_tile.index))
 
             for ii, nn_tile in enumerate(nn_tiles):
                 # adjust pixel-adjust parameters of neighboring tiles
