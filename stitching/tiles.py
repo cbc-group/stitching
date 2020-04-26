@@ -112,10 +112,10 @@ class Tile(object):
 
     def shift(self, offset):
         self._coord = [c + o for c, o in zip(self.coord, offset)]
-        self.handle.setPos(*self.coord[::-1][:2])
-
-        # force update
-        self._viewer.update()
+        if (self.handle != None):
+            self.handle.setPos(*self.coord[::-1][:2])
+            # force update
+            self._viewer.update()
 
     def set_viewer(self, viewer: "Viewer"):
         self._handle = viewer.add_image(self.data)
