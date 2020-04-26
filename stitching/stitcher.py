@@ -193,7 +193,7 @@ class Stitcher(object):
         coord1 = tuple(np.round(x).astype(int) for x in coord0)
         mesh1 = np.meshgrid(*tuple(np.linspace(x,x+L-1,L) for x, L in zip(coord1, dshape)), indexing='ij')
         pts1 = [ pt for pt in zip(*(x.flat for x in mesh1)) ]
-        pxls1 = fusefunc(pts1).reshape(dshape)
+        pxls1 = np.round(fusefunc(pts1)).astype(np.int16).reshape(dshape)
         if (len(dshape) == 2):
             vol[coord1[0]:coord1[0]+dshape[0],
                 coord1[1]:coord1[1]+dshape[1]] = pxls1
