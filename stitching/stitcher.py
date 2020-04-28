@@ -34,12 +34,12 @@ class Stitcher(object):
                 ref_roi = ref_tile.overlap_roi(nn_tile)
                 nn_roi = nn_tile.overlap_roi(ref_tile)
 
-                shift, error, _ = register_translation(
-                    ref_roi, nn_roi, upsample_factor=1, return_error=True
-                )
-                print(f"shifts:{shift}, error:{error:04f}")
-
-                nn_tile.shift(shift)
+                if ((ref_roi is not None) and (nn_roi is not None)):
+                    shift, error, _ = register_translation(
+                        ref_roi, nn_roi, upsample_factor=1, return_error=True
+                    )
+                    print(f"shifts:{shift}, error:{error:04f}")
+                    nn_tile.shift(shift)
 
     def adjust_intensity(self):
         logger.info(f"estimate global histogram")
