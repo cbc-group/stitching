@@ -115,7 +115,7 @@ class Stitcher(object):
         for tile in tiles:
             sum, ssum = 0.0, 0.0
             for px in tile.data.flat:
-                sum, ssum = sum+float(px), ssum+float(px*px)
+                sum, ssum = sum+float(px), ssum+float(px)**2
             tile._pxlsum = sum
             tile._pxlssum = ssum
             tile._nnfit = self._fuse_match_nn(tile)
