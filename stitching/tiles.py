@@ -171,7 +171,7 @@ class TileCollection(object):
         Returns:
             (list of [Tile or tuple of int])
         """
-        assert (nn == 'all' or a == 'next'), "invalid nn value"
+        assert (nn == 'all' or nn == 'next'), "invalid nn value"
         if isinstance(tile, Tile):
             index = tile.index
         logger.debug(f"reference index {index}")
