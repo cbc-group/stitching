@@ -97,7 +97,7 @@ class Stitcher(object):
         for tile in self.collection.tiles:
             tile.handle.setLevels(min_max)
 
-    def fuse(self, outdir, chunk_shape, compressor):
+    def fuse(self, outdir, chunk_shape, compressor=None):
         # get the shape of the whole volume.
         tile_shape = self.collection.layout.tile_shape
         last_tidx = tuple(i-1 for i in tile_shape)
@@ -131,6 +131,7 @@ class Stitcher(object):
         # paste tiles into vol.
         for tile in tiles:
             self._fuse_tile(vol, tile)
+        vol.close()
 
     def _fuse_match_nn(self, ref_tile):
         nn_tiles = self.collection.neighbor_of(ref_tile, nn='next')
