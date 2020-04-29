@@ -122,10 +122,10 @@ class Stitcher(object):
 
         # adjust tile pixels sequencially starting from the first tile
         first_tidx = (0,0) if (len(tile_shape) < 3) else (0,0,0)
-        first_tile = tiles[first_tidx]
+        first_tile = self.collection._tiles[first_tidx]
         first_tile._pxladj_a = 1.0
         first_tile._pxladj_b = 0.0
-        self._fuse_para_adjust(fist_tile, 0)
+        self._fuse_para_adjust(first_tile, 0)
         self._fuse_pxl_adjust()
 
         # paste tiles into vol.
@@ -170,6 +170,8 @@ class Stitcher(object):
                 ref_tile._nnfit['bfit'][ii] = afit*bfit0 + bfit
                 # adjust pixel sum & ssum of neighboring along idir direction
                 if (nn_tile.index == next_tidx):
+                    logger.debug(f"adjust parameter {next_tidx}")
+
                     next_tile = nn_tile
                     npxl = nn_tile.data.size
                     pxls = nn_tile._pxlsum
@@ -179,12 +181,12 @@ class Stitcher(object):
                     nn_tile._pxladj_a = afit
                     nn_tile._pxladj_b = bfit
                     nn_tile._pxlsum = afit*pxls + npxl*bfit
-                    nn_tile._pxlssum = afit**2*pxlss + 2.0*afit*bfit*pxls + npxi*bfit**2
+                    nn_tile._pxlssum = afit**2*pxlss + 2.0*afit*bfit*pxls + npxl*bfit**2
             if (next_tile == None):
                 break
             ref_tile = next_tile
             if (idir < maxdir):
-                _fuse_pxladjust(self, ref_tile, idir+1)
+                self._fuse_para_adjust(ref_tile, idir+1)
             nn_tiles = self.collection.neighbor_of(ref_tile, nn='next')
 
     def _fuse_pxl_adjust(self):
@@ -200,18 +202,19 @@ class Stitcher(object):
             pxlsum0 += tile._pxlsum
             pxlssum0 += tile._pxlssum
             pxls_mean.append(tile._pxlsum/npxl)
-            pxls_std.append(sqrt(tile._pxlssum/npxl-(tile._pxlsum/npxl)**2))
+            pxls_std.append(np.sqrt(tile._pxlssum/npxl-(tile._pxlsum/npxl)**2))
         # total mean and std of the current whole volume.
         pxlmean0 = pxlsum0 / npxl0
-        pxlstd0 = sqrt(pxlssum0/nxpl - pxlmean0**2)
+        pxlstd0 = np.sqrt(pxlssum0/npxl0 - pxlmean0**2)
         # the target mean and std to adjust of the whole volume.
         pxlmean1 = np.median(np.asarray(pxls_mean))
         pxlstd1 = np.amax(np.asarray(pxls_std))
 
         for tile in tiles:
+            logger.debug(f"adjust tile pixels {tile.index}")
             afit = tile._pxladj_a
             bfit = tile._pxladj_b
-            data = tiles.data
+            data = tile.data
             for i, p in enumerate(data.flat):
                 p = (afit*p+bfit - pxlmean0)/pxlstd0 * pxlstd1 + pxlmean1
                 (data.flat)[i] = np.round(p).astype(np.uint16) if p >= 0 else 0
