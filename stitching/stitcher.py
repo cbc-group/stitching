@@ -161,6 +161,8 @@ class Stitcher(object):
             # next tile index along idir direction
             next_tile = None
             next_tidx = tuple(x+1 if i==idir else x for i,x in enumerate(ref_tile.index))
+            if (idir < maxdir):
+                self._fuse_para_adjust(ref_tile, idir+1)
 
             for ii, nn_tile in enumerate(nn_tiles):
                 # adjust pixel-adjust parameters of neighboring tiles
@@ -185,8 +187,6 @@ class Stitcher(object):
             if (next_tile == None):
                 break
             ref_tile = next_tile
-            if (idir < maxdir):
-                self._fuse_para_adjust(ref_tile, idir+1)
             nn_tiles = self.collection.neighbor_of(ref_tile, nn='next')
 
     def _fuse_pxl_adjust(self):
