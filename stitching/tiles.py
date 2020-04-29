@@ -157,6 +157,10 @@ class TileCollection(object):
         return self._neighbors
 
     @property
+    def neighbors_next(self):
+        return self._neighbors_next
+
+    @property
     def tiles(self):
         return self._tiles.values()
 
