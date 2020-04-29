@@ -133,8 +133,11 @@ class Layout(object):
                     i0 += (cc-c0 > _maxshift)
                     ds.append(i0)
                     c0 = cc
-                idx = tuple(ds[cs.index(coord[i])] for coord in _coords)
-                idxs.append(idx)
+                idx = [ ds[cs.index(coord[i])] for coord in _coords ]
+                for i,id in enumerate(idx):
+                    if (i > 0 and id-idx[i-1] > 1):
+                        idx[i] = idx[i-1]+1
+                idxs.append(tuple(idx))
             return [i for i in zip(*idxs)]
 
         indices = _coord_to_indices(coords, maxshift)
