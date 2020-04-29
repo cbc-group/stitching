@@ -85,7 +85,10 @@ class Tile(object):
         c_coord1 = np.minimum(a_coord1, b_coord1)
 
         if np.any(c_coord1 <= c_coord0):
-            return None
+            if (return_raw_roi):
+                return None, None
+            else:
+                return None
 
         if return_raw_roi:
             roi = tuple(c_coord0) + tuple(c_coord1)
