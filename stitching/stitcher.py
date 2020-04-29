@@ -2,6 +2,7 @@ import logging
 
 import numpy as np
 import zarr
+from os import path, mkdir
 from scipy.stats import linregress
 from scipy.interpolate import RegularGridInterpolator
 from skimage.feature import register_translation
@@ -103,6 +104,9 @@ class Stitcher(object):
         last_tidx = tuple(i-1 for i in tile_shape)
         last_tile = self.collection._tiles[last_tidx]
         vol_shape = tuple(np.round(last_tile.coord).astype(int) + last_tile.data.shape)
+
+        if (path.isdir(outdir) == False):
+            mkdir(outdir)
         vol = zarr.open(
             outdir,
             mode="w",
@@ -131,7 +135,6 @@ class Stitcher(object):
         # paste tiles into vol.
         for tile in tiles:
             self._fuse_tile(vol, tile)
-        vol.close()
 
     def _fuse_match_nn(self, ref_tile):
         nn_tiles = self.collection.neighbor_of(ref_tile, nn='next')
@@ -223,10 +226,11 @@ class Stitcher(object):
         data = tile.data
         dshape = data.shape
         coord0 = tile.coord
+        coord1 = tuple(np.round(x).astype(int) for x in coord0)
+        logger.debug(f"fuse tile: index={tile.index}, dshape={dshape}, coord={coord0}, {coord1}")
         axes_mesh0 = tuple(np.linspace(x,x+L-1,L) for x, L in zip(coord0, dshape))
         fusefunc = RegularGridInterpolator(axes_mesh0, data, bounds_error=False, fill_value=None)
 
-        coord1 = tuple(np.round(x).astype(int) for x in coord0)
         mesh1 = np.meshgrid(*tuple(np.linspace(x,x+L-1,L) for x, L in zip(coord1, dshape)), indexing='ij')
         pts1 = fusefunc([ pt for pt in zip(*(x.flat for x in mesh1)) ])
         pts1[pts1 < 0] = 0
