@@ -147,8 +147,17 @@ class Stitcher(object):
         for tile in tiles:
             self._fuse_tile(vol, tile)
 
+    def _fuse_select_next_neighbor(self, ref_tile):
+        nn_tiles = []
+        ref_index = np.asarray(ref_tile.index)
+        for _nn_tile in self.collection.neighbor_of(ref_tile):
+            didx = np.asarray(_nn_tile.index) - ref_index
+            if (np.all(didx >= 0)):
+                nn_tiles.append(_nn_tile)
+        return nn_tiles
+
     def _fuse_match_nn(self, ref_tile):
-        nn_tiles = self.collection.neighbor_of(ref_tile, nn='next')
+        nn_tiles = self._fuse_select_next_neighbor(ref_tile)
         afit = []
         bfit = []
         for nn_tile in nn_tiles:
@@ -168,7 +177,8 @@ class Stitcher(object):
     def _fuse_para_adjust(self, ref_tile, idir, pxlsts):
         maxdir = len(self.collection.layout.tile_shape)-1
         ref_pxlsts = pxlsts[ref_tile.index]
-        nn_tiles = self.collection.neighbor_of(ref_tile, nn='next')
+        nn_tiles = self._fuse_select_next_neighbor(ref_tile)
+
         while (len(nn_tiles) > 0):
             # myself pixel-adjust parameter
             afit0 = ref_pxlsts['pxladj_a']
@@ -207,7 +217,7 @@ class Stitcher(object):
             if (next_tile == None):
                 break
             ref_tile = next_tile
-            nn_tiles = self.collection.neighbor_of(ref_tile, nn='next')
+            nn_tiles = self._fuse_select_next_neighbor(ref_tile)
 
     def _fuse_pxl_adjust(self, pxlsts):
         tiles = self.collection.tiles
