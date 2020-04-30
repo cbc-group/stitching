@@ -2,7 +2,7 @@ import logging
 import coloredlogs
 import numpy as np
 import pandas as pd
-from PIL import Image
+import imageio
 
 from stitching.layout import Layout
 from stitching.viewer import Viewer
@@ -39,8 +39,7 @@ def load_data(ddir, idxfn):
     y = []
     data = []
     for tilehead in tileheads:
-        im = Image.open(datadir + '/' + tilehead['file'])
-        imarr = np.array(im)
+        imarr = imageio.imread(datadir + '/' + tilehead['file'])
         x.append(tilehead['x'])
         y.append(tilehead['y'])
         data.append(imarr)
