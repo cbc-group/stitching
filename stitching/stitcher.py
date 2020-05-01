@@ -2,9 +2,8 @@ import logging
 
 import numpy as np
 import zarr
-from os import path, mkdir
-from scipy.stats import linregress
 from scipy.interpolate import RegularGridInterpolator
+from scipy.stats import linregress
 from skimage.feature import register_translation
 
 __all__ = ["Stitcher"]
@@ -35,7 +34,7 @@ class Stitcher(object):
                 ref_roi = ref_tile.overlap_roi(nn_tile)
                 nn_roi = nn_tile.overlap_roi(ref_tile)
 
-                if ((ref_roi is not None) and (nn_roi is not None)):
+                if (ref_roi is not None) and (nn_roi is not None):
                     shift, error, _ = register_translation(
                         ref_roi, nn_roi, upsample_factor=1, return_error=True
                     )
@@ -98,23 +97,24 @@ class Stitcher(object):
         for tile in self.collection.tiles:
             tile.handle.setLevels(min_max)
 
-    def fuse(self, outdir, chunk_shape, compressor=None):
+    def fuse(self, outdir, chunk_shape, compressor=None, overwrite=False):
         # get the shape of the whole volume.
         tile_shape = self.collection.layout.tile_shape
-        last_tidx = tuple(i-1 for i in tile_shape)
+        last_tidx = tuple(i - 1 for i in tile_shape)
         last_tile = self.collection._tiles[last_tidx]
         vol_shape = tuple(np.round(last_tile.coord).astype(int) + last_tile.data.shape)
 
-        if (path.isdir(outdir) == False):
-            mkdir(outdir)
+        # create zarr directory store
+        mode = "w" if overwrite else "w-"
         vol = zarr.open(
             outdir,
-            mode="w",
+            mode=mode,
             shape=vol_shape,
             chunks=chunk_shape,
-            dtype="u2",
-            compressor=compressor
+            dtype=np.uint16,
+            compressor=compressor,
         )
+
         pxlsts = {}
         tiles = self.collection.tiles
         for tile in tiles:
@@ -122,23 +122,23 @@ class Stitcher(object):
             npxl = tile.data.size
             pxlmean = np.mean(tile.data)
             pxlstd = np.std(tile.data)
-            pxlsum = pxlmean*npxl
-            pxlssum = (pxlstd**2 + pxlmean**2)*npxl
+            pxlsum = pxlmean * npxl
+            pxlssum = (pxlstd ** 2 + pxlmean ** 2) * npxl
             nnfit = self._fuse_match_nn(tile)
             t_pxlsts = {
-                'npxl': npxl,
-                'pxlmean': pxlmean,
-                'pxlstd': pxlstd,
-                'pxlsum': pxlsum,
-                'pxlssum': pxlssum,
-                'pxladj_a': 1.0,
-                'pxladj_b': 0.0,
-                'nnfit': nnfit
+                "npxl": npxl,
+                "pxlmean": pxlmean,
+                "pxlstd": pxlstd,
+                "pxlsum": pxlsum,
+                "pxlssum": pxlssum,
+                "pxladj_a": 1.0,
+                "pxladj_b": 0.0,
+                "nnfit": nnfit,
             }
             pxlsts[idx] = t_pxlsts
 
         # adjust tile pixels sequencially starting from the first tile
-        first_tidx = (0,0) if (len(tile_shape) < 3) else (0,0,0)
+        first_tidx = (0, 0) if (len(tile_shape) < 3) else (0, 0, 0)
         first_tile = self.collection._tiles[first_tidx]
         self._fuse_para_adjust(first_tile, 0, pxlsts)
         self._fuse_pxl_adjust(pxlsts)
@@ -152,7 +152,7 @@ class Stitcher(object):
         ref_index = np.asarray(ref_tile.index)
         for _nn_tile in self.collection.neighbor_of(ref_tile):
             didx = np.asarray(_nn_tile.index) - ref_index
-            if (np.all(didx >= 0)):
+            if np.all(didx >= 0):
                 nn_tiles.append(_nn_tile)
         return nn_tiles
 
@@ -168,53 +168,59 @@ class Stitcher(object):
             else:
                 ref_raw = np.ravel(ref_raw)
                 nn_raw = np.ravel(nn_raw)
-                slope, intercept, r_value, p_value, std = linregress(nn_raw,ref_raw)
+                slope, intercept, r_value, p_value, std = linregress(nn_raw, ref_raw)
             afit.append(slope)
             bfit.append(intercept)
-        nnfit = { 'afit': afit, 'bfit': bfit }
+        nnfit = {"afit": afit, "bfit": bfit}
         return nnfit
 
     def _fuse_para_adjust(self, ref_tile, idir, pxlsts):
-        maxdir = len(self.collection.layout.tile_shape)-1
+        maxdir = len(self.collection.layout.tile_shape) - 1
         ref_pxlsts = pxlsts[ref_tile.index]
         nn_tiles = self._fuse_select_next_neighbor(ref_tile)
 
-        while (len(nn_tiles) > 0):
+        while len(nn_tiles) > 0:
             # myself pixel-adjust parameter
-            afit0 = ref_pxlsts['pxladj_a']
-            bfit0 = ref_pxlsts['pxladj_b']
+            afit0 = ref_pxlsts["pxladj_a"]
+            bfit0 = ref_pxlsts["pxladj_b"]
             # next tile index along idir direction
             next_tile = None
-            next_tidx = tuple(x+1 if i==idir else x for i,x in enumerate(ref_tile.index))
-            if (idir < maxdir):
-                self._fuse_para_adjust(ref_tile, idir+1, pxlsts)
+            next_tidx = tuple(
+                x + 1 if i == idir else x for i, x in enumerate(ref_tile.index)
+            )
+            if idir < maxdir:
+                self._fuse_para_adjust(ref_tile, idir + 1, pxlsts)
 
             for ii, nn_tile in enumerate(nn_tiles):
                 # adjust pixel-adjust parameters of neighboring tiles
-                afit = ref_pxlsts['nnfit']['afit'][ii]
-                bfit = ref_pxlsts['nnfit']['bfit'][ii]
-                ref_pxlsts['nnfit']['afit'][ii] = afit*afit0
-                ref_pxlsts['nnfit']['bfit'][ii] = afit*bfit0 + bfit
+                afit = ref_pxlsts["nnfit"]["afit"][ii]
+                bfit = ref_pxlsts["nnfit"]["bfit"][ii]
+                ref_pxlsts["nnfit"]["afit"][ii] = afit * afit0
+                ref_pxlsts["nnfit"]["bfit"][ii] = afit * bfit0 + bfit
                 # adjust pixel sum & ssum of neighboring along idir direction
-                if (nn_tile.index == next_tidx):
+                if nn_tile.index == next_tidx:
                     logger.debug(f"adjust parameter {next_tidx}")
 
                     next_tile = nn_tile
                     next_pxlsts = pxlsts[next_tidx]
-                    npxl = next_pxlsts['npxl']
-                    pxls = next_pxlsts['pxlsum']
-                    pxlss = next_pxlsts['pxlssum']
-                    afit = ref_pxlsts['nnfit']['afit'][ii]
-                    bfit = ref_pxlsts['nnfit']['bfit'][ii]
-                    nn_pxlsum = afit*pxls + npxl*bfit
-                    nn_pxlssum = afit**2*pxlss + 2.0*afit*bfit*pxls + npxl*bfit**2
-                    pxlsts[next_tidx]['pxladj_a'] = afit
-                    pxlsts[next_tidx]['pxladj_b'] = bfit
-                    pxlsts[next_tidx]['pxlsum'] = nn_pxlsum
-                    pxlsts[next_tidx]['pxlssum'] = nn_pxlssum
-                    pxlsts[next_tidx]['pxlmean'] = nn_pxlsum/npxl
-                    pxlsts[next_tidx]['pxlstd'] = np.sqrt(nn_pxlssum/npxl-(nn_pxlsum/npxl)**2)
-            if (next_tile == None):
+                    npxl = next_pxlsts["npxl"]
+                    pxls = next_pxlsts["pxlsum"]
+                    pxlss = next_pxlsts["pxlssum"]
+                    afit = ref_pxlsts["nnfit"]["afit"][ii]
+                    bfit = ref_pxlsts["nnfit"]["bfit"][ii]
+                    nn_pxlsum = afit * pxls + npxl * bfit
+                    nn_pxlssum = (
+                        afit ** 2 * pxlss + 2.0 * afit * bfit * pxls + npxl * bfit ** 2
+                    )
+                    pxlsts[next_tidx]["pxladj_a"] = afit
+                    pxlsts[next_tidx]["pxladj_b"] = bfit
+                    pxlsts[next_tidx]["pxlsum"] = nn_pxlsum
+                    pxlsts[next_tidx]["pxlssum"] = nn_pxlssum
+                    pxlsts[next_tidx]["pxlmean"] = nn_pxlsum / npxl
+                    pxlsts[next_tidx]["pxlstd"] = np.sqrt(
+                        nn_pxlssum / npxl - (nn_pxlsum / npxl) ** 2
+                    )
+            if next_tile == None:
                 break
             ref_tile = next_tile
             nn_tiles = self._fuse_select_next_neighbor(ref_tile)
@@ -228,15 +234,15 @@ class Stitcher(object):
         npxl0 = 0
         for tile in tiles:
             t_pxlsts = pxlsts[tile.index]
-            npxl = t_pxlsts['npxl']
+            npxl = t_pxlsts["npxl"]
             npxl0 += npxl
-            pxlsum0 += t_pxlsts['pxlsum']
-            pxlssum0 += t_pxlsts['pxlssum']
-            pxls_mean.append(t_pxlsts['pxlmean'])
-            pxls_std.append(t_pxlsts['pxlstd'])
+            pxlsum0 += t_pxlsts["pxlsum"]
+            pxlssum0 += t_pxlsts["pxlssum"]
+            pxls_mean.append(t_pxlsts["pxlmean"])
+            pxls_std.append(t_pxlsts["pxlstd"])
         # total mean and std of the current whole volume.
         pxlmean0 = pxlsum0 / npxl0
-        pxlstd0 = np.sqrt(pxlssum0/npxl0 - pxlmean0**2)
+        pxlstd0 = np.sqrt(pxlssum0 / npxl0 - pxlmean0 ** 2)
         # the target mean and std to adjust of the whole volume.
         pxlmean1 = np.median(np.asarray(pxls_mean))
         pxlstd1 = np.amax(np.asarray(pxls_std))
@@ -244,11 +250,11 @@ class Stitcher(object):
         for tile in tiles:
             logger.debug(f"adjust tile pixels {tile.index}")
             t_pxlsts = pxlsts[tile.index]
-            afit = t_pxlsts['pxladj_a']
-            bfit = t_pxlsts['pxladj_b']
+            afit = t_pxlsts["pxladj_a"]
+            bfit = t_pxlsts["pxladj_b"]
             data = tile.data
             for i, p in enumerate(data.flat):
-                p = (afit*p+bfit - pxlmean0)/pxlstd0 * pxlstd1 + pxlmean1
+                p = (afit * p + bfit - pxlmean0) / pxlstd0 * pxlstd1 + pxlmean1
                 (data.flat)[i] = np.round(p).astype(np.uint16) if p >= 0 else 0
 
     def _fuse_tile(self, vol, tile):
@@ -256,19 +262,30 @@ class Stitcher(object):
         dshape = data.shape
         coord0 = tile.coord
         coord1 = tuple(np.round(x).astype(int) for x in coord0)
-        logger.debug(f"fuse tile: index={tile.index}, dshape={dshape}, coord={coord0}, {coord1}")
-        axes_mesh0 = tuple(np.linspace(x,x+L-1,L) for x, L in zip(coord0, dshape))
-        fusefunc = RegularGridInterpolator(axes_mesh0, data, bounds_error=False, fill_value=None)
+        logger.debug(
+            f"fuse tile: index={tile.index}, dshape={dshape}, coord={coord0}, {coord1}"
+        )
+        axes_mesh0 = tuple(np.linspace(x, x + L - 1, L) for x, L in zip(coord0, dshape))
+        fusefunc = RegularGridInterpolator(
+            axes_mesh0, data, bounds_error=False, fill_value=None
+        )
 
-        mesh1 = np.meshgrid(*tuple(np.linspace(x,x+L-1,L) for x, L in zip(coord1, dshape)), indexing='ij')
-        pts1 = fusefunc([ pt for pt in zip(*(x.flat for x in mesh1)) ])
+        mesh1 = np.meshgrid(
+            *tuple(np.linspace(x, x + L - 1, L) for x, L in zip(coord1, dshape)),
+            indexing="ij",
+        )
+        pts1 = fusefunc([pt for pt in zip(*(x.flat for x in mesh1))])
         pts1[pts1 < 0] = 0
         pxls1 = np.round(pts1).astype(np.uint16).reshape(dshape)
-        if (len(dshape) == 2):
-            vol[coord1[0]:coord1[0]+dshape[0],
-                coord1[1]:coord1[1]+dshape[1]] = pxls1
+        if len(dshape) == 2:
+            vol[
+                coord1[0] : coord1[0] + dshape[0], coord1[1] : coord1[1] + dshape[1]
+            ] = pxls1
         else:
-            vol[coord1[0]:coord1[0]+dshape[0],
-                coord1[1]:coord1[1]+dshape[1],
-                coord1[2]:coord1[2]+dshape[2]] = pxls1
+            vol[
+                coord1[0] : coord1[0] + dshape[0],
+                coord1[1] : coord1[1] + dshape[1],
+                coord1[2] : coord1[2] + dshape[2],
+            ] = pxls1
+
     ##
