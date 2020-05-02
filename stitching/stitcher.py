@@ -110,7 +110,7 @@ class Stitcher(object):
             outdir,
             mode=mode,
             shape=vol_shape,
-            chunks=chunk_shape,
+            chunks=chunk_shape,  # FIXME auto determine chunk shape
             dtype=np.uint16,
             compressor=compressor,
         )
@@ -145,7 +145,9 @@ class Stitcher(object):
 
         # paste tiles into vol.
         for tile in tiles:
-            self._fuse_tile(vol, tile)
+            self._fuse_tile(
+                vol, tile
+            )  # TODO group tiles into disjoint set, in tilecollection?
 
     def _fuse_select_next_neighbor(self, ref_tile):
         nn_tiles = []
