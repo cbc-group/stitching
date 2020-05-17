@@ -246,10 +246,8 @@ class Stitcher(object):
             t_pxlsts = pxlsts[tile.index]
             afit = t_pxlsts['pxladj_a']
             bfit = t_pxlsts['pxladj_b']
-            data = tile.data
-            for i, p in enumerate(data.flat):
-                p = (afit*p+bfit - pxlmean0)/pxlstd0 * pxlstd1 + pxlmean1
-                (data.flat)[i] = np.round(p).astype(np.uint16) if p >= 0 else 0
+            tile._data = np.round((afit*tile.data.astype(np.float32)+bfit - pxlmean0)/pxlstd0 * pxlstd1 + pxlmean1)
+            tile._data = np.where(tile.data < 0, 0, tile.data).astype(np.uint16)
 
     def _fuse_tile(self, vol, tile):
         data = tile.data
