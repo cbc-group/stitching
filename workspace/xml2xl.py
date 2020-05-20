@@ -150,8 +150,9 @@ def main(src_dir, project_path, imaris_dir):
 
 
 if __name__ == "__main__":
-    main(
-        src_dir="Y:/ARod/4F/20200324_No5_CamA",
-        project_path="0.xml",
-        imaris_dir="Y:/ARod/4F/20200324_No5_CamA/Full_resolution/layer_0",
-    )
+    for i in range(1, 8):
+        main(
+            src_dir="Y:/ARod/4F/20200324_No5_CamA",
+            project_path=f"Y:/ARod/4F/20200324_No5_CamA/Full_resolution/{i}.xml",
+            imaris_dir=f"Y:/ARod/4F/20200324_No5_CamA/Full_resolution/layer_{i}",
+        )
