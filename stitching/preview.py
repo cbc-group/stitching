@@ -9,7 +9,7 @@ import imageio
 from dask.distributed import Client, LocalCluster, as_completed, progress
 from tqdm import tqdm
 from utoolbox.cli.prompt import prompt_options
-from utoolbox.io.dataset import open_dataset
+from utoolbox.io import open_dataset
 
 import zarr
 
