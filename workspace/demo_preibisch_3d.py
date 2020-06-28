@@ -1,13 +1,20 @@
 import glob
 import logging
 import os
+import xml.etree.ElementTree as ET
 
 import dask.array as da
 import imageio
 import numpy as np
+import pandas as pd
+import zarr
 from dask import delayed
 from dask.distributed import Client, as_completed
-import xml.etree.ElementTree as ET
+from prompt_toolkit.shortcuts import progress_dialog, yes_no_dialog
+
+from stitching.layout import Layout
+from stitching.stitcher import Stitcher
+from stitching.tiles import Tile, TileCollection
 
 logger = logging.getLogger("stitcher.demo")
 
@@ -28,7 +35,7 @@ def launch_local_cluster():
     return client
 
 
-def convert_to_zarr(src_dir, dst_dir=None):
+def convert_to_zarr(src_dir, dst_dir=None, overwrite=None):
     """
     Convert their dataset to nested Zarr group dataset, since original data is already 
     renamed as C-order, we simply index them accordingly as groups.
@@ -37,6 +44,27 @@ def convert_to_zarr(src_dir, dst_dir=None):
     files.sort()
 
     assert len(files) > 0, "no file to convert"
+
+    if dst_dir is None:
+        # normalize path
+        parent, dname = os.path.split(src_dir)
+        dname = f"{src_dir}.zarr"
+        dst_dir = os.path.join(parent, dname)
+        logger.debug(f'default output "{dst_dir}"')
+
+    # open dataset, overwrite if exists
+    mode = "w" if overwrite else "w-"
+    try:
+        dataset = zarr.open(dst_dir, mode=mode)
+    except ValueError as err:
+        if "contains a" in str(err):
+            if overwrite is None:
+                print(dst_dir)
+                raise FileExistsError(dst_dir)
+            else:
+                # return as read-only
+                logger.info(f"load existing dataset")
+                return zarr.open(dst_dir, mode="r")
 
     # open arbitrary item to determine array info
     tmp = imageio.volread(files[0])
@@ -54,16 +82,6 @@ def convert_to_zarr(src_dir, dst_dir=None):
 
     arrays = [volread_da(uri) for uri in files]
 
-    if dst_dir is None:
-        # normalize path
-        parent, dname = os.path.split(src_dir)
-        dname = f"{src_dir}.zarr"
-        dst_dir = os.path.join(parent, dname)
-        logger.debug(f'default output "{dst_dir}"')
-
-    # open dataset, overwrite if exists
-    dst_dir = zarr.open(dst_dir, mode="w")
-
     # input data is (x:2, y:3) tiles
     tasks = []
     i = 0
@@ -73,7 +91,7 @@ def convert_to_zarr(src_dir, dst_dir=None):
             i += 1
 
             path = f"{iy:03d}/{ix:03d}"
-            group = dst_dir.require_group(path)
+            group = dataset.require_group(path)
 
             # create container
             dst_arr = group.require_dataset("raw", shape, dtype=dtype, exact=True)
@@ -89,17 +107,22 @@ def convert_to_zarr(src_dir, dst_dir=None):
     client = Client.current()
     batch_size = len(client.ncores())
 
-    n_failed = 0
-    for i in range(0, len(tasks), batch_size):
-        futures = [client.compute(task) for task in tasks[i : i + batch_size]]
-        for future in as_completed(futures):
-            try:
-                future.result()
-            except Exception:
-                n_failed += 1
-                logger.exception(f"{n_failed} failed task(s)")
+    def worker(set_precentage, log_text):
+        n_completed, n_failed = 0, 0
+        for i in range(0, len(tasks), batch_size):
+            futures = [client.compute(task) for task in tasks[i : i + batch_size]]
+            for future in as_completed(futures):
+                try:
+                    future.result()
+                except Exception:
+                    n_failed += 1
+                    logger.exception(f"{n_failed} failed task(s)")
+                else:
+                    set_precentage((n_completed + n_failed) / len(tasks))
 
-    return dst_dir
+    progress_dialog(text="Convert to Zarr", run_callback=worker).run()
+
+    return dataset
 
 
 def load_coords_from_bdv_xml(xml_path):
@@ -110,15 +133,20 @@ def load_coords_from_bdv_xml(xml_path):
     tree = ET.parse(xml_path)
     root = tree.getroot()
 
-    # TODO get voxel size
+    setup = next(root.iter("ViewSetup"))
+    voxel_size = setup.find("voxelSize").find("size").text
+    voxel_size = [float(value) for value in voxel_size.split(" ")]
+    voxel_size = np.array(voxel_size, dtype=np.float32)
+
+    # since transform matrix is isotropic, we divide it by the smallest voxel dimension
+    voxel_size = voxel_size[0]
+    logger.info(f"voxel size {voxel_size} um")
 
     # we only need these transform matrix
     transform_list = ["Stitching Transform", "Translation to Regular Grid"]
 
+    coords = []
     for transforms in root.iter("ViewRegistration"):
-        attrib = transforms.attrib
-        logger.debug(f"setup {attrib['setup']}")
-
         matrix = np.identity(4, dtype=np.float32)
         for transform in transforms.iter("ViewTransform"):
             # determine types
@@ -134,16 +162,55 @@ def load_coords_from_bdv_xml(xml_path):
 
             # accumulate
             matrix = np.matmul(matrix, values)
-        print(matrix)
 
-        print()
+        # shift vector is the last column (F-order)
+        shift = matrix[:-1, -1]
+
+        # TODO z dimension is upsampled, divide it?
+
+        # save it as list in order to batch convert later
+        coords.append(shift)
+    # there are 3 channels, we use the first one
+    coords = coords[:6]
+
+    # as pandas dataframe
+    coords = pd.DataFrame(coords, columns=["x", "y", "z"], dtype=np.float32)
+    print(coords)
+
+    return coords
 
 
 def main():
-    # dataset = convert_to_zarr("/scratch/preibisch_3d/C1")
+    # load zarr dataset
+    src_dir = "/scratch/preibisch_3d/C1"
+    try:
+        dataset = convert_to_zarr(src_dir)
+    except FileExistsError as err:
+        overwrite = yes_no_dialog(
+            title="Zarr dataset exists",
+            text=f"Should we overwrite the existing dataset?\n({err})",
+        ).run()
+        dataset = convert_to_zarr(src_dir, overwrite=overwrite)
+
+    # load coordinates
     coords = load_coords_from_bdv_xml(
         "/scratch/preibisch_3d/grid-3d-stitched-h5/dataset.xml"
     )
+
+    # repopulate the dataset as list of dask array
+    data = []
+    for _, yx in dataset.groups():
+        for _, x in yx.groups():
+            # data.append(x["raw"])
+            data.append(np.array(x["raw"]))  # TODO temp load in mem
+
+    # create stitcher
+    layout = Layout.from_coords(coords)
+    collection = TileCollection(layout, data)
+    stitcher = Stitcher(collection)
+
+    # execute
+    stitcher.fuse("output", (64, 64, 64))  # TODO why chunk shape
 
 
 if __name__ == "__main__":
