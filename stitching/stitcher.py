@@ -145,13 +145,7 @@ class Stitcher(object):
 
         # paste tiles into vol.
         for tile in tiles:
-<<<<<<< HEAD
-            self._fuse_tile(
-                vol, tile
-            )  # TODO group tiles into disjoint set, in tilecollection?
-=======
             self._fuse_tile(vol, chunk_shape, tile)
->>>>>>> origin/thh_stitch3d
 
     def _fuse_select_next_neighbor(self, ref_tile):
         nn_tiles = []
@@ -256,45 +250,71 @@ class Stitcher(object):
         for tile in tiles:
             logger.debug(f"adjust tile pixels {tile.index}")
             t_pxlsts = pxlsts[tile.index]
-            afit = t_pxlsts['pxladj_a']
-            bfit = t_pxlsts['pxladj_b']
-            tile._data = np.round((afit*tile.data.astype(np.float32)+bfit - pxlmean0)/pxlstd0 * pxlstd1 + pxlmean1)
+            afit = t_pxlsts["pxladj_a"]
+            bfit = t_pxlsts["pxladj_b"]
+            tile._data = np.round(
+                (afit * tile.data.astype(np.float32) + bfit - pxlmean0)
+                / pxlstd0
+                * pxlstd1
+                + pxlmean1
+            )
             tile._data = np.where(tile.data < 0, 0, tile.data).astype(np.uint16)
 
     def _fuse_tile(self, vol, chunk_shape, tile):
         data = tile.data
         dshape = data.shape
         coord0 = tile.coord
-        logger.debug(f"fuse tile: index={tile.index}, dshape={dshape}, chunk_shape={chunk_shape}, coord={coord0}")
+        logger.debug(
+            f"fuse tile: index={tile.index}, dshape={dshape}, chunk_shape={chunk_shape}, coord={coord0}"
+        )
 
         # Partition the whole tile into chunks.
-        chunk_mesh = np.meshgrid(*tuple(np.arange(x,x+L,Lc) for x, L, Lc in zip(coord0, dshape, chunk_shape)))
-        chunks_x0 = [ pt for pt in zip(*(x.flat for x in chunk_mesh)) ]
+        chunk_mesh = np.meshgrid(
+            *tuple(
+                np.arange(x, x + L, Lc) for x, L, Lc in zip(coord0, dshape, chunk_shape)
+            )
+        )
+        chunks_x0 = [pt for pt in zip(*(x.flat for x in chunk_mesh))]
 
         for chunk_x0 in chunks_x0:
-            cx0 = tuple((np.array(chunk_x0)-np.array(coord0)).astype(int))
-            cshape = [ L-xc if xc+Lc > L else Lc for xc, Lc, L in zip(cx0, chunk_shape, dshape) ]
-            axes_mesh0 = [ np.linspace(xc,xc+Lc-1,Lc) for xc, Lc in zip(chunk_x0, cshape) ]
-            if (len(cshape) == 2):
-                chunk_data = data[cx0[0]:cx0[0]+cshape[0],
-                                  cx0[1]:cx0[1]+cshape[1]]
+            cx0 = tuple((np.array(chunk_x0) - np.array(coord0)).astype(int))
+            cshape = [
+                L - xc if xc + Lc > L else Lc
+                for xc, Lc, L in zip(cx0, chunk_shape, dshape)
+            ]
+            axes_mesh0 = [
+                np.linspace(xc, xc + Lc - 1, Lc) for xc, Lc in zip(chunk_x0, cshape)
+            ]
+            if len(cshape) == 2:
+                chunk_data = data[
+                    cx0[0] : cx0[0] + cshape[0], cx0[1] : cx0[1] + cshape[1]
+                ]
             else:
-                chunk_data = data[cx0[0]:cx0[0]+cshape[0],
-                                  cx0[1]:cx0[1]+cshape[1],
-                                  cx0[2]:cx0[2]+cshape[2]]
-            fusefunc = RegularGridInterpolator(axes_mesh0, chunk_data, bounds_error=False, fill_value=None)
+                chunk_data = data[
+                    cx0[0] : cx0[0] + cshape[0],
+                    cx0[1] : cx0[1] + cshape[1],
+                    cx0[2] : cx0[2] + cshape[2],
+                ]
+            fusefunc = RegularGridInterpolator(
+                axes_mesh0, chunk_data, bounds_error=False, fill_value=None
+            )
 
             chunk_x1 = tuple(np.round(x) for x in chunk_x0)
             cx1 = tuple(np.array(chunk_x1).astype(int))
-            mesh1 = np.meshgrid(*tuple(np.linspace(x,x+L-1,L) for x, L in zip(chunk_x1, cshape)), indexing='ij')
-            pts1 = fusefunc([ pt for pt in zip(*(x.flat for x in mesh1)) ])
+            mesh1 = np.meshgrid(
+                *tuple(np.linspace(x, x + L - 1, L) for x, L in zip(chunk_x1, cshape)),
+                indexing="ij",
+            )
+            pts1 = fusefunc([pt for pt in zip(*(x.flat for x in mesh1))])
             pts1[pts1 < 0] = 0
             pts1 = np.round(pts1).astype(np.uint16).reshape(cshape)
-            if (len(cshape) == 2):
-                vol[cx1[0]:cx1[0]+cshape[0],
-                    cx1[1]:cx1[1]+cshape[1]] = pts1
+            if len(cshape) == 2:
+                vol[cx1[0] : cx1[0] + cshape[0], cx1[1] : cx1[1] + cshape[1]] = pts1
             else:
-                vol[cx1[0]:cx1[0]+cshape[0],
-                    cx1[1]:cx1[1]+cshape[1],
-                    cx1[2]:cx1[2]+cshape[2]] = pts1
+                vol[
+                    cx1[0] : cx1[0] + cshape[0],
+                    cx1[1] : cx1[1] + cshape[1],
+                    cx1[2] : cx1[2] + cshape[2],
+                ] = pts1
+
     ##
