@@ -1,6 +1,8 @@
 import logging
+from typing import Tuple
 
 import numpy as np
+import pandas as pd
 
 from stitching.layout import Layout
 
@@ -150,6 +152,31 @@ class TileCollection:
         return self._tiles[tuple(key)]
 
     ##
+
+    @property
+    def bounding_box(self) -> Tuple[int]:
+        # build list of current coordinates
+        coords = [tile.coord for tile in self.tiles]
+        coords = pd.DataFrame(coords, dtype=np.float32)
+
+        # build list of shapes of tiles (we cannot assume each tile has the same shape)
+        shapes = [tile.data.shape for tile in self.tiles]
+        shapes = pd.DataFrame(shapes, dtype=np.float32)
+
+        # use pandas to determine boundary (anchors + tiles)
+        #
+        #   1           1: coords
+        #   +---+
+        #   |   |
+        #   +---+
+        #       2       2: coords + shapes
+        bbox = (coords + shapes).max().values - coords.min().values
+
+        # round up to ensure we consider every voxels
+        bbox = np.ceil(bbox)
+        # cast to proper type
+        bbox = tuple(bbox.astype(int))
+        return bbox
 
     @property
     def layout(self):

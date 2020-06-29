@@ -5,6 +5,7 @@ import zarr
 from scipy.interpolate import RegularGridInterpolator
 from scipy.stats import linregress
 from skimage.feature import register_translation
+import dask.array as da
 
 __all__ = ["Stitcher"]
 
@@ -14,12 +15,19 @@ logger = logging.getLogger(__name__)
 class Stitcher(object):
     def __init__(self, collection):
         self._collection = collection
+        self._fused = None
 
     ##
 
     @property
     def collection(self):
         return self._collection
+
+    @property
+    def fused(self):
+        if self._fused is None:
+            logger.warning("collection not fused yet, please call `Stitcher.fuse()`")
+        return self._fused
 
     ##
 
@@ -97,17 +105,13 @@ class Stitcher(object):
         for tile in self.collection.tiles:
             tile.handle.setLevels(min_max)
 
-    def fuse(self, outdir, chunk_shape, compressor=None, overwrite=False):
-        # get the shape of the whole volume.
-        tile_shape = self.collection.layout.tile_shape
-        last_tidx = tuple(i - 1 for i in tile_shape)
-        last_tile = self.collection._tiles[last_tidx]
-        vol_shape = tuple(np.round(last_tile.coord).astype(int) + last_tile.data.shape)
+    def fuse(self, dst_dir, chunk_shape, compressor=None, overwrite=False):
+        vol_shape = self.collection.bounding_box
 
         # create zarr directory store
         mode = "w" if overwrite else "w-"
         vol = zarr.open(
-            outdir,
+            dst_dir,
             mode=mode,
             shape=vol_shape,
             chunks=chunk_shape,  # FIXME auto determine chunk shape
@@ -124,7 +128,7 @@ class Stitcher(object):
             # TODO replace sum/ssum with simple np.sum(*)
             pxlsum = pxlmean * npxl
             pxlssum = (pxlstd ** 2 + pxlmean ** 2) * npxl
-            nnfit = self._fuse_match_nn(tile)
+            nnfit = self._fit_intensity_leastsq(tile)
             t_pxlsts = {
                 "npxl": npxl,
                 "pxlmean": pxlmean,
@@ -143,7 +147,8 @@ class Stitcher(object):
         self._fuse_para_adjust(first_tile, 0, pxlsts)
         self._fuse_pxl_adjust(pxlsts)
 
-        # paste tiles into vol.
+        # paste tiles into vol
+        vol = da.from_zarr(vol)
         for tile in self.collection.tiles:
             self._fuse_tile(vol, chunk_shape, tile)
 
@@ -166,9 +171,10 @@ class Stitcher(object):
                 nn_tiles.append(nn_tile)
         return nn_tiles
 
-    def _fuse_match_nn(self, ref_tile):
+    def _fit_intensity_leastsq(self, ref_tile):
         """
-        Match intensity between overlap regions with a linear function.
+        Fit intensity between overlap regions with a linear function using least square 
+        method.
 
         Y = m X + c
             Y: overlap region of the reference
@@ -287,6 +293,12 @@ class Stitcher(object):
         logger.debug(
             f"fuse tile: index={tile.index}, dshape={dshape}, chunk_shape={chunk_shape}, coord={coord0}"
         )
+
+        def _resample_block(block, block_info=None):
+            print(block_info)
+            print()
+
+        vol.map_blocks(_resample_block)
 
         # Partition the whole tile into chunks.
         chunk_mesh = np.meshgrid(
