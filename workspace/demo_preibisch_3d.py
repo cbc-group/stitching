@@ -19,16 +19,19 @@ from stitching.tiles import Tile, TileCollection
 logger = logging.getLogger("stitcher.demo")
 
 
-def launch_local_cluster():
-    client = Client(
-        nthreads=4,
-        **{
-            "memory_limit": "2GB",
-            "memory_target_fraction": 0.6,
-            "memory_spill_fraction": False,
-            "memory_pause_fraction": 0.8,
-        },
-    )
+def launch_cluster(address=None):
+    if address is None:
+        client = Client(
+            nthreads=4,
+            **{
+                "memory_limit": "2GB",
+                "memory_target_fraction": 0.6,
+                "memory_spill_fraction": False,
+                "memory_pause_fraction": 0.8,
+            },
+        )
+    else:
+        client = Client(address)
 
     logger.info(client)
 
@@ -47,6 +50,7 @@ def convert_to_zarr(src_dir, dst_dir=None, overwrite=None):
 
     if dst_dir is None:
         # normalize path
+        src_dir = os.path.abspath(src_dir)
         parent, dname = os.path.split(src_dir)
         dname = f"{src_dir}.zarr"
         dst_dir = os.path.join(parent, dname)
@@ -182,7 +186,7 @@ def load_coords_from_bdv_xml(xml_path):
 
 def main():
     # load zarr dataset
-    src_dir = "/scratch/preibisch_3d/C1"
+    src_dir = "data/preibisch_3d/C1"
     try:
         dataset = convert_to_zarr(src_dir)
     except FileExistsError as err:
@@ -194,7 +198,7 @@ def main():
 
     # load coordinates
     coords = load_coords_from_bdv_xml(
-        "/scratch/preibisch_3d/grid-3d-stitched-h5/dataset.xml"
+        "data/preibisch_3d/grid-3d-stitched-h5/dataset.xml"
     )
 
     # repopulate the dataset as list of dask array
@@ -209,8 +213,15 @@ def main():
     collection = TileCollection(layout, data)
     stitcher = Stitcher(collection)
 
+    # rebuild output dir
+    # normalize path
+    src_dir = os.path.abspath(src_dir)
+    parent, dname = os.path.split(src_dir)
+    dname = f"{src_dir}_output.zarr"
+    dst_dir = os.path.join(parent, dname)
+
     # execute
-    stitcher.fuse("output", (64, 64, 64))  # TODO why chunk shape
+    stitcher.fuse(dst_dir, (64, 64, 64), overwrite=True)  # TODO why chunk shape
 
 
 if __name__ == "__main__":
@@ -221,7 +232,7 @@ if __name__ == "__main__":
         level="DEBUG", fmt="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S"
     )
 
-    client = launch_local_cluster()
+    client = launch_cluster(address=None)
     try:
         main()
     except Exception:
