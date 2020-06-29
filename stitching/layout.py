@@ -18,7 +18,9 @@ class Layout(object):
         logger.info(f"({desc}) tiles")
 
     @classmethod
-    def from_layout(cls, tile_shape, axis_order, direction, data_shape, overlap, snake=False):
+    def from_layout(
+        cls, tile_shape, axis_order, direction, data_shape, overlap, snake=False
+    ):
         """
         Args:
             tile_shape (tuple of int): number of tiles in each dimension
@@ -33,19 +35,19 @@ class Layout(object):
             direction = list(direction)
 
         if isinstance(overlap, float):
-            overlap  = (overlap,)
+            overlap = (overlap,)
         if len(overlap) == 1:
             overlap *= len(tile_shape)  # expand to fit ndims
         # shrink shape by overlap ratio
         data_shape = tuple(s * (1 - o) for s, o in zip(data_shape, overlap))
 
         # axis_order: remove 'z' axis for 2D, and translate to axisid
-        if (len(tile_shape) <= 2):
+        if len(tile_shape) <= 2:
             axis_order = axis_order.replace("z", "")
-            axisid = { 'x':1, 'y':0 }
+            axisid = {"x": 1, "y": 0}
         else:
-            axisid = { 'x':2, 'y':1, 'z':0 }
-        axis_order = [ axisid[lab] for lab in list(axis_order) ]
+            axisid = {"x": 2, "y": 1, "z": 0}
+        axis_order = [axisid[lab] for lab in list(axis_order)]
 
         # convert tile_shape from (Nx,Ny,Nz) to (Nz,Ny,Nx)
         tile_shape = tile_shape[::-1]
@@ -88,14 +90,14 @@ class Layout(object):
                         return
 
         # index cursor
-        i_cursor = [t-1 if d < 0 else 0 for t, d in zip(tile_shape, direction)]
+        i_cursor = [t - 1 if d < 0 else 0 for t, d in zip(tile_shape, direction)]
         logger.debug(f"cursor init index {tuple(i_cursor)}")
         # create index maps
-        aidx    = 0
+        aidx = 0
         indices = [c for c in walk(i_cursor, axis_order, aidx)]
 
         # multiply tile shapes to get pixel coordinates
-        coords = [tuple(ii*s for ii, s in zip(i, data_shape)) for i in indices]
+        coords = [tuple(ii * s for ii, s in zip(i, data_shape)) for i in indices]
 
         # create instance
         return cls(indices, coords)
@@ -130,13 +132,13 @@ class Layout(object):
                 ds = []
                 i0 = 0
                 for cc in cs:
-                    i0 += (cc-c0 > _maxshift)
+                    i0 += cc - c0 > _maxshift
                     ds.append(i0)
                     c0 = cc
-                idx = [ ds[cs.index(coord[i])] for coord in _coords ]
-                for i,id in enumerate(idx):
-                    if (i > 0 and id-idx[i-1] > 1):
-                        idx[i] = idx[i-1]+1
+                idx = [ds[cs.index(coord[i])] for coord in _coords]
+                for i, id in enumerate(idx):
+                    if i > 0 and id - idx[i - 1] > 1:
+                        idx[i] = idx[i - 1] + 1
                 idxs.append(tuple(idx))
             return [i for i in zip(*idxs)]
 

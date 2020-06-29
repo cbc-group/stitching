@@ -116,12 +116,12 @@ class Stitcher(object):
         )
 
         pxlsts = {}
-        tiles = self.collection.tiles
-        for tile in tiles:
+        for tile in self.collection.tiles:
             idx = tile.index
             npxl = tile.data.size
             pxlmean = np.mean(tile.data)
             pxlstd = np.std(tile.data)
+            # TODO replace sum/ssum with simple np.sum(*)
             pxlsum = pxlmean * npxl
             pxlssum = (pxlstd ** 2 + pxlmean ** 2) * npxl
             nnfit = self._fuse_match_nn(tile)
@@ -137,14 +137,15 @@ class Stitcher(object):
             }
             pxlsts[idx] = t_pxlsts
 
-        # adjust tile pixels sequencially starting from the first tile
-        first_tidx = (0, 0) if (len(tile_shape) < 3) else (0, 0, 0)
-        first_tile = self.collection._tiles[first_tidx]
+        # adjust tile pixels sequentially starting from the first tile
+        indices = self.collection.layout.indices
+        indices.sort()
+        first_tile = self.collection.tiles[indices[0]]
         self._fuse_para_adjust(first_tile, 0, pxlsts)
         self._fuse_pxl_adjust(pxlsts)
 
         # paste tiles into vol.
-        for tile in tiles:
+        for tile in self.collection.tiles:
             self._fuse_tile(vol, chunk_shape, tile)
 
     def _select_pos_neighbors(self, ref_tile):  # QA
@@ -153,6 +154,10 @@ class Stitcher(object):
 
         Args:
             ref_tile (Tile): the reference tile
+
+        Note:
+            If stitching order is assigned, use this function to reorder how neighbors 
+            are assigned.
         """
         ref_index = ref_tile.index
         nn_tiles = []
@@ -163,6 +168,16 @@ class Stitcher(object):
         return nn_tiles
 
     def _fuse_match_nn(self, ref_tile):
+        """
+        Match intensity between overlap regions with a linear function.
+
+        Y = m X + c
+            Y: overlap region of the reference
+            X: overlap region of the source (neighbor)
+        
+        Args:
+            ref_tile (Tile): the reference tile
+        """
         nn_tiles = self._select_pos_neighbors(ref_tile)
         afit = []
         bfit = []

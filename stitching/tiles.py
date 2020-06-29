@@ -9,7 +9,7 @@ __all__ = ["Tile", "TileCollection"]
 logger = logging.getLogger(__name__)
 
 
-class Tile(object):
+class Tile:
     def __init__(self, index, coord, data):
         self._index, self._coord = list(index), list(coord)
         self._data = data
@@ -20,7 +20,7 @@ class Tile(object):
     def __str__(self):
         index = ", ".join([f"{i:d}" for i in self.index[::-1]])
         coord = ", ".join([f"{c:.1f}" for c in self.coord[::-1]])
-        return f"<Tile ({index}) @ ({coord})"
+        return f"<Tile ({index}) @ ({coord})>"
 
     ##
 
@@ -85,7 +85,7 @@ class Tile(object):
         c_coord1 = np.minimum(a_coord1, b_coord1)
 
         if np.any(c_coord1 <= c_coord0):
-            if (return_raw_roi):
+            if return_raw_roi:
                 return None, None
             else:
                 return None
@@ -115,7 +115,7 @@ class Tile(object):
 
     def shift(self, offset):
         self._coord = [c + o for c, o in zip(self.coord, offset)]
-        if (self.handle != None):
+        if self.handle is not None:
             self.handle.setPos(*self.coord[::-1][:2])
             # force update
             self._viewer.update()
@@ -131,7 +131,7 @@ class Tile(object):
         viewer.update()
 
 
-class TileCollection(object):
+class TileCollection:
     def __init__(self, layout: Layout, data, viewer: "Viewer" = None):
         self._layout = layout
         self._tiles = {
