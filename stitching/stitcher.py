@@ -138,9 +138,8 @@ class Stitcher(object):
             pxlsts[idx] = t_pxlsts
 
         # adjust tile pixels sequentially starting from the first tile
-        indices = self.collection.layout.indices
-        indices.sort()
-        first_tile = self.collection.tiles[indices[0]]
+        first_tile_index = sorted(list(self.collection.layout.indices))[0]
+        first_tile = self.collection[first_tile_index]
         self._fuse_para_adjust(first_tile, 0, pxlsts)
         self._fuse_pxl_adjust(pxlsts)
 
