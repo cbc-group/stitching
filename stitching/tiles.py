@@ -1,5 +1,5 @@
 import logging
-from typing import Tuple
+from typing import Tuple, List
 
 import numpy as np
 import pandas as pd
@@ -262,8 +262,8 @@ class TileCollection:
         return self._neighbors
 
     @property
-    def tiles(self):
-        return self._tiles.values()
+    def tiles(self) -> List[Tile]:
+        return list(self._tiles.values())
 
     ##
 
