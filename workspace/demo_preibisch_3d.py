@@ -188,7 +188,9 @@ def main():
     # load zarr dataset
     src_dir = "data/preibisch_3d/C1"
     try:
-        dataset = convert_to_zarr(src_dir)
+        # dataset = convert_to_zarr(src_dir)
+        # DEBUG force read-only
+        dataset = convert_to_zarr(src_dir, overwrite=False)
     except FileExistsError as err:
         overwrite = yes_no_dialog(
             title="Zarr dataset exists",
@@ -205,9 +207,11 @@ def main():
     data = []
     for _, yx in dataset.groups():
         for _, x in yx.groups():
-            # data.append(x["raw"])
-            data.append(np.array(x["raw"]))  # TODO temp load in mem
-
+            array = da.from_zarr(x["raw"])
+            if False:
+                # DEBUG force load data in memory
+                array = np.array(array)
+            data.append(array)
     # create stitcher
     layout = Layout.from_coords(coords)
     collection = TileCollection(layout, data)
