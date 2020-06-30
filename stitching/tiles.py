@@ -4,7 +4,7 @@ from typing import Tuple, List
 import numpy as np
 import pandas as pd
 from scipy.stats import linregress
-
+from dask import delayed
 from stitching.layout import Layout
 
 __all__ = ["Tile", "TileCollection"]

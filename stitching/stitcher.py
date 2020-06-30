@@ -1,11 +1,16 @@
 import logging
 
+import dask.array as da
 import numpy as np
 import zarr
+from dask import delayed
+from dask.delayed import Delayed
+from dask.distributed import Client, Future, as_completed
 from scipy.interpolate import RegularGridInterpolator
 from scipy.stats import linregress
 from skimage.feature import register_translation
-import dask.array as da
+
+from stitching.tiles import Tile
 
 __all__ = ["Stitcher"]
 
@@ -49,7 +54,7 @@ class Stitcher(object):
                     print(f"shifts:{shift}, error:{error:04f}")
                     nn_tile.shift(shift)
 
-    def adjust_intensity(self):
+    def adjust_intensity(self):  # TODO deprecate this
         logger.info(f"estimate global histogram")
 
         # estimate histogram min/max
@@ -118,6 +123,9 @@ class Stitcher(object):
             dtype=np.uint16,
             compressor=compressor,
         )
+
+        # DEBUG -> deprecate the following sections
+        self._estimate_global_intensity_profile()
 
         pxlsts = {}
         for tile in self.collection.tiles:
@@ -190,6 +198,125 @@ class Stitcher(object):
             intercepts.append(c)
         nnfit = {"afit": slopes, "bfit": intercepts}
         return nnfit
+
+    def _estimate_global_intensity_profile(self):
+        """
+        Walk over all tiles and collect their statistics, and estimate a proper
+        intensity correction function for each tile.
+        """
+        # TODO start tile should not assume to be origin tile
+        first_tile_index = sorted(list(self.collection.layout.indices))[0]
+        start_tile = self.collection[first_tile_index]
+
+        client = Client.current()
+
+        class TileStatistics:
+            """
+            A aggregator for tile statistics and their task management.
+            """
+
+            def __init__(self, tile: Tile):
+                # alias for the internal data container
+                self.data = tile.data
+
+                # populate all delay functions
+                self._std = self.data.std()
+                self._sum = self.data.sum()
+                self._ssum = (self.data * self.data).sum()
+
+            ##
+
+            @property
+            def size(self):
+                """Number of elements in the array."""
+                return self.data.size
+
+            @property
+            def mean(self):
+                """
+                Compute the arithmetic mean.
+                
+                Manually calculate mean instead of calling .mean() function to ensure 
+                we use the cached version.
+                """
+                return self.sum / self.size
+
+            @property
+            def std(self):
+                """Sample standard deviation of array elements."""
+                assert not isinstance(self._std, Delayed), "statistics not computed"
+
+                if isinstance(self._std, Future):
+                    self._std = self._std.result()
+                return self._std
+
+            @property
+            def sum(self):
+                """Sum of array elements."""
+                assert not isinstance(self._sum, Delayed), "statistics not computed"
+
+                if isinstance(self._sum, Future):
+                    self._sum = self._sum.result()
+                return self._sum
+
+            @property
+            def ssum(self):
+                """Squared sum of array elements."""
+                assert not isinstance(self._ssum, Delayed), "statistics not computed"
+
+                if isinstance(self._ssum, Future):
+                    self._ssum = self._ssum.result()
+                return self._ssum
+
+            ##
+
+            def compute(self):
+                """
+                Trigger compute on delayed functions.
+
+                Args:
+                    client (Client, optional): the scheduler to operate on
+
+                Returns:
+                    (list of Future): the Future object to wait for
+                """
+                self._std = client.compute(self._std)
+                self._sum = client.compute(self._sum)
+                self._ssum = client.compute(self._ssum)
+
+                return [self._std, self._sum, self._ssum]
+
+        # build statistics collection...
+        statistics = {tile: TileStatistics(tile) for tile in self.collection.tiles}
+        # ... and wait for them to finish
+        batch_size = len(client.ncores())
+        tasks = list(statistics.values())
+        n_failed = 0
+        for i in range(0, len(tasks), batch_size):
+            futures = []
+            for task in tasks[i : i + batch_size]:
+                futures.extend(task.compute())
+            for future in as_completed(futures):
+                try:
+                    future.result()
+                except Exception:
+                    n_failed += 1
+                    logger.exception(f"{n_failed} failed task(s)")
+
+        # DFS over all the tiles
+        visited = {tile: False for tile in self.collection.tiles}
+        stack = [start_tile]
+        while stack:
+            curr_tile = stack.pop()
+            if visited[curr_tile]:
+                continue
+            visited[curr_tile] = True
+
+            # TODO process shits
+
+            # next iteration
+            for nn_tile in self._select_pos_neighbors(curr_tile):
+                stack.append(nn_tile)
 
     def _fuse_para_adjust(self, ref_tile, idir, pxlsts):
         maxdir = len(self.collection.layout.tile_shape) - 1
