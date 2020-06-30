@@ -26,7 +26,7 @@ class Stitcher(object):
     @property
     def fused(self):
         if self._fused is None:
-            logger.warning("collection not fused yet, please call `Stitcher.fuse()`")
+            logger.error("collection not fused yet, please call `Stitcher.fuse()`")
         return self._fused
 
     ##
@@ -192,7 +192,7 @@ class Stitcher(object):
             m, c, r2, _, _ = linregress(nn_raw.ravel(), ref_raw.ravel())
             if r2 < 0.5:
                 logger.warning(
-                    f"intensity between {ref_tile.index} and {nn_tile.index} has low R^2 ({r2:.4f})"
+                    f"low intensity correlation between {ref_tile.index} and {nn_tile.index} (R^2={r2:.4f})"
                 )
             slopes.append(m)
             intercepts.append(c)

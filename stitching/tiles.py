@@ -3,6 +3,7 @@ from typing import Tuple
 
 import numpy as np
 import pandas as pd
+from scipy.stats import linregress
 
 from stitching.layout import Layout
 
@@ -16,6 +17,9 @@ class Tile:
         self._index, self._coord = list(index), list(coord)
         self._data = data
 
+        # init intensity profile
+        self.brightness, self.contrast = 0.0, 1.0
+
         # use set_viewer to ensure coord is initialized
         self._handle, self._viewer = None, None
 
@@ -27,24 +31,42 @@ class Tile:
     ##
 
     @property
+    def brightness(self):
+        return np.float32(self._brightness)
+
+    @brightness.setter
+    def brightness(self, value):
+        self._brightness = np.float32(value)
+        # TODO trigger updates
+
+    @property
+    def contrast(self):
+        return np.float32(self._contrast)
+
+    @contrast.setter
+    def contrast(self, value: float):
+        self._contrast = np.float32(value)
+        # TODO trigger updates
+
+    @property
     def coord(self):
         return tuple(self._coord)
 
     @property
     def data(self):
-        return self._data
+        return self.contrast * self._data + self.brightness
 
     @property
     def handle(self):
         return self._handle
 
     @property
-    def index(self):
+    def index(self) -> Tuple[int]:
         return tuple(self._index)
 
     ##
 
-    def overlap_roi(self, tile, return_raw_roi=False):
+    def overlap_roi(self, tile: "Tile", return_raw_roi=False):
         """
         Returns region that overlap with a provided tile.
 
@@ -121,6 +143,54 @@ class Tile:
             self.handle.setPos(*self.coord[::-1][:2])
             # force update
             self._viewer.update()
+
+    ##
+
+    def reset_intensity(self):
+        """
+        Reset brightness offset to 0 and contrast slope to 1.
+        """
+        self._brightness, self._contrast = np.float32(0), np.float32(1)
+        # TODO trigger updates
+
+    def match_intensity(self, tile: "Tile", threshold=0.5, apply=True):
+        """
+        Match intensity of a given tile _to current tile_ using overlapped region.
+
+        Args:
+            tile (Tile): tile to compare with
+            threshold (float, optional): if not None, raise error when correlation
+                falls below threshold
+            apply (bool, optional): if True, apply new contrast adjustment to the tile
+
+        Returns:
+            (tuple of float) as (m, c), where adjustment function is Y = m X + c
+        """
+        reference = self.overlap_roi(tile)
+        if reference is None:
+            raise ValueError(f"no overlap between {self.index} and {tile.index}")
+        target = tile.overlap_roi(self)
+
+        m, c, r2, _, _ = linregress(target.ravel(), reference.ravel())
+        if r2 < threshold:
+            raise ValueError(
+                f"low intensity correlation between {reference.index} and {target.index} (R^2={r2:.4f})"
+            )
+
+        if apply:
+            # original:
+            #   y0 = m1 x + c1
+            #
+            # new (m2, c2):
+            #   y = m2 y0 + c2
+            #     = m2 (m1 x + c1)
+            #   y = m1 m2 x + (m2 c1 + c2)
+            tile.contrast *= m
+            tile.brightness = m * tile.brightness + c
+
+        return m, c
+
+    ##
 
     def set_viewer(self, viewer: "Viewer"):
         self._handle = viewer.add_image(self.data)
