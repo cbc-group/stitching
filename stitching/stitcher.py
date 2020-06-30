@@ -185,15 +185,7 @@ class Stitcher(object):
         """
         slopes, intercepts = [], []
         for nn_tile in self._select_pos_neighbors(ref_tile):
-            ref_raw = ref_tile.overlap_roi(nn_tile)
-            assert ref_raw is not None, "neighbors must overlap, something wrong"
-            nn_raw = nn_tile.overlap_roi(ref_tile)
-
-            m, c, r2, _, _ = linregress(nn_raw.ravel(), ref_raw.ravel())
-            if r2 < 0.5:
-                logger.warning(
-                    f"low intensity correlation between {ref_tile.index} and {nn_tile.index} (R^2={r2:.4f})"
-                )
+            m, c = ref_tile.match_intensity(nn_tile, apply=False)
             slopes.append(m)
             intercepts.append(c)
         nnfit = {"afit": slopes, "bfit": intercepts}

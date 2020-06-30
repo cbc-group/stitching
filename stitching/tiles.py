@@ -155,7 +155,12 @@ class Tile:
 
     def match_intensity(self, tile: "Tile", threshold=0.5, apply=True):
         """
-        Match intensity of a given tile _to current tile_ using overlapped region.
+        Match intensity of a given tile _to current tile_ by linear fitting intensity
+        of overlapped region.
+
+        Y = m X + c
+            Y: overlap region of this tile
+            X: overlap region of provided tile
 
         Args:
             tile (Tile): tile to compare with
@@ -164,7 +169,7 @@ class Tile:
             apply (bool, optional): if True, apply new contrast adjustment to the tile
 
         Returns:
-            (tuple of float) as (m, c), where adjustment function is Y = m X + c
+            (tuple of float) as (m, c)
         """
         reference = self.overlap_roi(tile)
         if reference is None:
@@ -179,12 +184,12 @@ class Tile:
 
         if apply:
             # original:
-            #   y0 = m1 x + c1
+            #   y0 = m0 x + c0
             #
-            # new (m2, c2):
-            #   y = m2 y0 + c2
-            #     = m2 (m1 x + c1)
-            #   y = m1 m2 x + (m2 c1 + c2)
+            # new (m, c):
+            #   y = m y0 + c
+            #     = m (m0 x + c0) + c
+            #     = m m0 x + (m c0 + c)
             tile.contrast *= m
             tile.brightness = m * tile.brightness + c
 
