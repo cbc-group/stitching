@@ -183,21 +183,20 @@ class Stitcher(object):
         Args:
             ref_tile (Tile): the reference tile
         """
-        nn_tiles = self._select_pos_neighbors(ref_tile)
-        afit = []
-        bfit = []
-        for nn_tile in nn_tiles:
-            ref_roi, ref_raw = ref_tile.overlap_roi(nn_tile, return_raw_roi=True)
-            nn_roi, nn_raw = nn_tile.overlap_roi(ref_tile, return_raw_roi=True)
-            if (ref_raw is None) or (nn_raw is None):
-                slope, intercept = 1.0, 0.0
-            else:
-                ref_raw = np.ravel(ref_raw)
-                nn_raw = np.ravel(nn_raw)
-                slope, intercept, r_value, p_value, std = linregress(nn_raw, ref_raw)
-            afit.append(slope)
-            bfit.append(intercept)
-        nnfit = {"afit": afit, "bfit": bfit}
+        slopes, intercepts = [], []
+        for nn_tile in self._select_pos_neighbors(ref_tile):
+            ref_raw = ref_tile.overlap_roi(nn_tile)
+            assert ref_raw is not None, "neighbors must overlap, something wrong"
+            nn_raw = nn_tile.overlap_roi(ref_tile)
+
+            m, c, r2, _, _ = linregress(nn_raw.ravel(), ref_raw.ravel())
+            if r2 < 0.5:
+                logger.warning(
+                    f"intensity between {ref_tile.index} and {nn_tile.index} has low R^2 ({r2:.4f})"
+                )
+            slopes.append(m)
+            intercepts.append(c)
+        nnfit = {"afit": slopes, "bfit": intercepts}
         return nnfit
 
     def _fuse_para_adjust(self, ref_tile, idir, pxlsts):
