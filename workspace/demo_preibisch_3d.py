@@ -236,7 +236,7 @@ if __name__ == "__main__":
         level="DEBUG", fmt="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S"
     )
 
-    client = launch_cluster(address=None)
+    client = launch_cluster(address="localhost:8786")
     try:
         main()
     except Exception:
