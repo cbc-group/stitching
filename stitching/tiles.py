@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 class Tile:
     def __init__(self, index, coord, data):
-        self._index, self._coord = list(index), list(coord)
+        self._index, self._coord = list(index), np.array(coord, dtype=np.float32)
         self._data = data
 
         # init intensity profile
@@ -49,8 +49,8 @@ class Tile:
         # TODO trigger updates
 
     @property
-    def coord(self):
-        return tuple(self._coord)
+    def coord(self) -> np.ndarray:
+        return self._coord
 
     @property
     def data(self):
@@ -229,6 +229,14 @@ class TileCollection:
     ##
 
     @property
+    def origin(self) -> Tuple[int]:
+        # build list of current coordinates
+        coords = [tile.coord for tile in self.tiles]
+        coords = pd.DataFrame(coords, dtype=np.float32)
+
+        return tuple(np.floor(coords.min().values).astype(int))
+
+    @property
     def bounding_box(self) -> Tuple[int]:
         # build list of current coordinates
         coords = [tile.coord for tile in self.tiles]
@@ -245,13 +253,14 @@ class TileCollection:
         #   |   |
         #   +---+
         #       2       2: coords + shapes
-        bbox = (coords + shapes).max().values - coords.min().values
+        bbox_max = (coords + shapes).max().values
+        bbox_min = coords.min().values
 
         # round up to ensure we consider every voxels
-        bbox = np.ceil(bbox)
+        bbox = np.ceil(bbox_max) - np.floor(bbox_min)
+
         # cast to proper type
-        bbox = tuple(bbox.astype(int))
-        return bbox
+        return tuple(bbox.astype(int))
 
     @property
     def layout(self):

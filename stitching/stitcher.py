@@ -110,20 +110,19 @@ class Stitcher(object):
         for tile in self.collection.tiles:
             tile.handle.setLevels(min_max)
 
-    def fuse(self, dst_dir, chunk_shape, compressor=None, overwrite=False):
+    def fuse(self, dst_dir, overwrite=False):
         vol_shape = self.collection.bounding_box
 
         # create zarr directory store
         mode = "w" if overwrite else "w-"
-        vol = zarr.open(
+        dst_arr = zarr.open(
             dst_dir,
             mode=mode,
             shape=vol_shape,
-            chunks=chunk_shape,  # FIXME auto determine chunk shape
-            dtype=np.uint16,
-            compressor=compressor,
+            dtype=np.uint8,  # TODO infer dtype from tiles  # TODO add compression
         )
 
+        """
         # DEBUG -> deprecate the following sections
         self._estimate_global_intensity_profile()
 
@@ -154,11 +153,15 @@ class Stitcher(object):
         first_tile = self.collection[first_tile_index]
         self._fuse_para_adjust(first_tile, 0, pxlsts)
         self._fuse_pxl_adjust(pxlsts)
+        """
+
+        # DEBUG, resample tiles
+        # for tile in self.collection.tiles:
+        #    self._resample_tile(tile)
 
         # paste tiles into vol
-        vol = da.from_zarr(vol)
         for tile in self.collection.tiles:
-            self._fuse_tile(vol, chunk_shape, tile)
+            self._fuse_tile(dst_arr, tile)
 
     def _select_pos_neighbors(self, ref_tile):  # QA
         """
@@ -404,19 +407,90 @@ class Stitcher(object):
             )
             tile._data = np.where(tile.data < 0, 0, tile.data).astype(np.uint16)
 
-    def _fuse_tile(self, vol, chunk_shape, tile):
+    def _resample_tile(self, src_tile: Tile):
+        """
+        Resample tile to destination grid.
+
+        Args:
+            tile (Tile): tile to resample with
+
+        Returns:
+            TBA
+        """
+        data = src_tile.data
+
+        # offset in local coordinate \in (-1, 1)
+        offset, coord0 = np.modf(src_tile.coord)
+
+        def _build_mesh_vector(location):
+            return tuple(
+                np.arange(start, stop, dtype=np.float32) for start, stop in location
+            )
+
+        def resample_chunk(block, block_info):
+            # infer actual block size
+            # NOTE range \in [start, stop)
+            array_loc = block_info[0]["array-location"]
+            result_shape = tuple((stop - start) - 2 for start, stop in array_loc)
+
+            # generate orignal mesh
+            vec0 = _build_mesh_vector(block_info[0]["array-location"])
+            interp = RegularGridInterpolator(vec0, block)
+
+            # generate target mesh, overlap region is 1 voxel
+            vec = tuple(v[1:-1] + o for v, o in zip(vec0, offset))
+            mesh = np.meshgrid(*vec, indexing="ij")
+
+            # convert to lookup table (list of points)
+            ndim = len(mesh)
+            mesh = np.array(mesh).reshape(ndim, -1)
+
+            result = interp(mesh.T)
+
+            # restore shape
+            result = result.reshape(result_shape)
+
+            return result
+
+        res_tile = da.map_overlap(
+            resample_chunk,
+            data,
+            dtype=data.dtype,
+            depth=1,
+            boundary="nearest",
+            chunks=data.chunks,
+            trim=False,
+        )
+
+        # rebuild integer coordinate
+        coord0 = tuple(int(c) for c in coord0)
+
+        return coord0, res_tile
+
+    def _fuse_tile(self, dst_arr, tile: Tile):
+        # TODO rewrite this to factor in overlap regions
+
+        origin = self.collection.origin
+        coord0, res_tile = self._resample_tile(tile)
+
+        print(f"index={tile.index}, origin={origin}, coord0={coord0}")
+
+        # build sampler
+        sampler = tuple(
+            slice(coord - offset, coord - offset + shape)
+            for offset, coord, shape in zip(origin, coord0, res_tile.shape)
+        )
+        dst_arr[sampler] = res_tile.compute().astype(np.uint8)  # DEBUG
+
+    def _fuse_tile_0(self, dst_arr, tile: Tile):
+        chunk_shape = tile.data.chunksize
+
         data = tile.data
         dshape = data.shape
         coord0 = tile.coord
         logger.debug(
             f"fuse tile: index={tile.index}, dshape={dshape}, chunk_shape={chunk_shape}, coord={coord0}"
         )
-
-        def _resample_block(block, block_info=None):
-            print(block_info)
-            print()
-
-        vol.map_blocks(_resample_block)
 
         # Partition the whole tile into chunks.
         chunk_mesh = np.meshgrid(
@@ -459,9 +533,9 @@ class Stitcher(object):
             pts1[pts1 < 0] = 0
             pts1 = np.round(pts1).astype(np.uint16).reshape(cshape)
             if len(cshape) == 2:
-                vol[cx1[0] : cx1[0] + cshape[0], cx1[1] : cx1[1] + cshape[1]] = pts1
+                dst_arr[cx1[0] : cx1[0] + cshape[0], cx1[1] : cx1[1] + cshape[1]] = pts1
             else:
-                vol[
+                dst_arr[
                     cx1[0] : cx1[0] + cshape[0],
                     cx1[1] : cx1[1] + cshape[1],
                     cx1[2] : cx1[2] + cshape[2],

@@ -225,7 +225,7 @@ def main():
     dst_dir = os.path.join(parent, dname)
 
     # execute
-    stitcher.fuse(dst_dir, (64, 64, 64), overwrite=True)  # TODO why chunk shape
+    stitcher.fuse(dst_dir, overwrite=True)  # TODO why chunk shape
 
 
 if __name__ == "__main__":
