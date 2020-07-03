@@ -147,7 +147,13 @@ def load_coords_from_bdv_xml(xml_path):
     logger.info(f"voxel size {voxel_size} um")
 
     # we only need these transform matrix
-    transform_list = ["Stitching Transform", "Translation to Regular Grid"]
+    transform_list = [
+        "Stitching Transform",
+        "Translation to Regular Grid",
+        "calibration",
+    ]
+
+    calibration = None
 
     coords = []
     for transforms in root.iter("ViewRegistration"):
@@ -170,7 +176,10 @@ def load_coords_from_bdv_xml(xml_path):
         # shift vector is the last column (F-order)
         shift = matrix[:-1, -1]
 
+        # revert voxel aspect ratio calibration
         # TODO z dimension is upsampled, divide it?
+        calibration = np.diag(matrix)[:-1]
+        shift /= calibration
 
         # save it as list in order to batch convert later
         coords.append(shift)

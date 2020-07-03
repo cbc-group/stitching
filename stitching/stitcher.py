@@ -155,12 +155,9 @@ class Stitcher(object):
         self._fuse_pxl_adjust(pxlsts)
         """
 
-        # DEBUG, resample tiles
-        # for tile in self.collection.tiles:
-        #    self._resample_tile(tile)
-
         # paste tiles into vol
         for tile in self.collection.tiles:
+            logger.info(f"writing tile {tile.index}")
             self._fuse_tile(dst_arr, tile)
 
     def _select_pos_neighbors(self, ref_tile):  # QA
@@ -421,20 +418,28 @@ class Stitcher(object):
 
         # offset in local coordinate \in (-1, 1)
         offset, coord0 = np.modf(src_tile.coord)
+        coord0 = coord0.astype(int)  # indexing is always integer
+        logger.debug(
+            f"tile {src_tile.index}, coord0={tuple(coord0)}, offset={tuple(offset)}"
+        )
 
-        def _build_mesh_vector(location):
-            return tuple(
-                np.arange(start, stop, dtype=np.float32) for start, stop in location
-            )
-
-        def resample_chunk(block, block_info):
-            # infer actual block size
+        def _extract_result_shape(block_info, pad_size=1):
             # NOTE range \in [start, stop)
             array_loc = block_info[0]["array-location"]
-            result_shape = tuple((stop - start) - 2 for start, stop in array_loc)
+            return tuple((stop - start) - 2 * pad_size for start, stop in array_loc)
+
+        def _build_mesh_vector(block_info):
+            array_loc = block_info[0]["array-location"]
+            return tuple(
+                np.arange(start, stop, dtype=np.float32) for start, stop in array_loc
+            )
+
+        def resample_block(block, block_info=None):
+            # infer actual block size
+            result_shape = _extract_result_shape(block_info)
 
             # generate orignal mesh
-            vec0 = _build_mesh_vector(block_info[0]["array-location"])
+            vec0 = _build_mesh_vector(block_info)
             interp = RegularGridInterpolator(vec0, block)
 
             # generate target mesh, overlap region is 1 voxel
@@ -453,7 +458,7 @@ class Stitcher(object):
             return result
 
         res_tile = da.map_overlap(
-            resample_chunk,
+            resample_block,
             data,
             dtype=data.dtype,
             depth=1,
@@ -461,9 +466,6 @@ class Stitcher(object):
             chunks=data.chunks,
             trim=False,
         )
-
-        # rebuild integer coordinate
-        coord0 = tuple(int(c) for c in coord0)
 
         return coord0, res_tile
 
@@ -473,13 +475,15 @@ class Stitcher(object):
         origin = self.collection.origin
         coord0, res_tile = self._resample_tile(tile)
 
-        print(f"index={tile.index}, origin={origin}, coord0={coord0}")
+        origin, shape = np.array(origin), np.array(tile.shape)
 
         # build sampler
+        sampler_start = coord0 - origin
+        sampler_stop = sampler_start + shape
         sampler = tuple(
-            slice(coord - offset, coord - offset + shape)
-            for offset, coord, shape in zip(origin, coord0, res_tile.shape)
+            slice(start, stop) for start, stop in zip(sampler_start, sampler_stop)
         )
+
         dst_arr[sampler] = res_tile.compute().astype(np.uint8)  # DEBUG
 
     def _fuse_tile_0(self, dst_arr, tile: Tile):
