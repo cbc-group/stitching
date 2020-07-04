@@ -11,6 +11,8 @@ import zarr
 from dask import delayed
 from dask.distributed import Client, as_completed
 from prompt_toolkit.shortcuts import progress_dialog, yes_no_dialog
+from utoolbox.io.dataset import TiledDatasetIterator
+from utoolbox.io import open_dataset
 
 from stitching.layout import Layout
 from stitching.stitcher import Stitcher
@@ -43,10 +45,7 @@ def convert_to_zarr(src_dir, dst_dir=None, overwrite=None):
     Convert their dataset to nested Zarr group dataset, since original data is already 
     renamed as C-order, we simply index them accordingly as groups.
     """
-    files = glob.glob(os.path.join(src_dir, "*.tif"))
-    files.sort()
-
-    assert len(files) > 0, "no file to convert"
+    ds = open_dataset(src_dir)
 
     if dst_dir is None:
         # normalize path
@@ -58,6 +57,7 @@ def convert_to_zarr(src_dir, dst_dir=None, overwrite=None):
 
     # open dataset, overwrite if exists
     mode = "w" if overwrite else "w-"
+    writeback = True
     try:
         dataset = zarr.open(dst_dir, mode=mode)
     except ValueError as err:
@@ -65,46 +65,39 @@ def convert_to_zarr(src_dir, dst_dir=None, overwrite=None):
             if overwrite is None:
                 raise FileExistsError(dst_dir)
             else:
-                # return as read-only
+                writeback = False
+                # open as read-only
                 logger.info(f"load existing dataset")
-                return zarr.open(dst_dir, mode="r")
+                dataset = zarr.open(dst_dir, mode="r")
 
-    # open arbitrary item to determine array info
-    tmp = imageio.volread(files[0])
-    shape, dtype = tmp.shape, tmp.dtype
-    logger.info(f"tile shape {shape}, {dtype}")
-    del tmp
-
-    def volread_np(uri):
-        """Prevent serialization error."""
-        return np.array(imageio.volread(uri))
-
-    def volread_da(uri):
-        """Create dask array from delayed image reader."""
-        return da.from_delayed(delayed(volread_np, pure=False)(uri), shape, dtype)
-
-    arrays = [volread_da(uri) for uri in files]
-
-    # input data is (x:2, y:3) tiles
+    coords = []
     tasks = []
-    i = 0
-    for iy in range(3):
-        for ix in range(2):
-            src_arr = arrays[i]
-            i += 1
+    for (index, coord), tile in TiledDatasetIterator(
+        ds, axes="zyx", return_key=True, return_format="both"
+    ):
+        coords.append(coord)
+        if not writeback:
+            continue
+        src_arr = ds[tile]
 
-            path = f"{iy:03d}/{ix:03d}"
-            group = dataset.require_group(path)
+        desc = [f"{i:03d}" for i in index]
+        path = "/".join(desc)
+        group = dataset.require_group(path)
 
-            # create container
-            dst_arr = group.require_dataset("raw", shape, dtype=dtype, exact=True)
+        # create container
+        dst_arr = group.require_dataset(
+            "raw", src_arr.shape, dtype=src_arr.dtype, exact=True
+        )
 
-            # dump data
-            src_arr = src_arr.rechunk()
-            task = src_arr.to_zarr(
-                dst_arr, overwrite=True, compute=False, return_stored=False
-            )
-            tasks.append(task)
+        # dump data
+        src_arr = src_arr.rechunk()
+        task = src_arr.to_zarr(
+            dst_arr, overwrite=True, compute=False, return_stored=False
+        )
+        tasks.append(task)
+
+    coords = pd.DataFrame(coords, columns=["z", "y", "x"], dtype=np.float32)
+    print(coords)
 
     # use active workers to determine batch size
     client = Client.current()
@@ -125,7 +118,7 @@ def convert_to_zarr(src_dir, dst_dir=None, overwrite=None):
 
     progress_dialog(text="Convert to Zarr", run_callback=worker).run()
 
-    return dataset
+    return coords, dataset
 
 
 def load_coords_from_bdv_xml(xml_path):
@@ -146,13 +139,7 @@ def load_coords_from_bdv_xml(xml_path):
     logger.info(f"voxel size {voxel_size} um")
 
     # we only need these transform matrix
-    transform_list = [
-        "Stitching Transform",
-        "Translation to Regular Grid",
-        "calibration",
-    ]
-
-    calibration = None
+    transform_list = ["Stitching Transform", "Translation to Regular Grid"]
 
     coords = []
     for transforms in root.iter("ViewRegistration"):
@@ -175,10 +162,7 @@ def load_coords_from_bdv_xml(xml_path):
         # shift vector is the last column (F-order)
         shift = matrix[:-1, -1]
 
-        # revert voxel aspect ratio calibration
         # TODO z dimension is upsampled, divide it?
-        calibration = np.diag(matrix)[:-1]
-        shift /= calibration
 
         # save it as list in order to batch convert later
         coords.append(shift)
@@ -194,32 +178,33 @@ def load_coords_from_bdv_xml(xml_path):
 
 def main():
     # load zarr dataset
-    src_dir = "data/preibisch_3d/C1"
+    src_dir = "/home2/rescue/stitch/run/data/demo_3D_2x2x2_CMTKG-V3"
     try:
-        # dataset = convert_to_zarr(src_dir)
-        # DEBUG force read-only
-        dataset = convert_to_zarr(src_dir, overwrite=False)
+        # DEBUG force read-only (overwrite=False)
+        coords, dataset = convert_to_zarr(src_dir, overwrite=False)
     except FileExistsError as err:
         overwrite = yes_no_dialog(
             title="Zarr dataset exists",
             text=f"Should we overwrite the existing dataset?\n({err})",
         ).run()
-        dataset = convert_to_zarr(src_dir, overwrite=overwrite)
+        coords, dataset = convert_to_zarr(src_dir, overwrite=overwrite)
 
     # load coordinates
-    coords = load_coords_from_bdv_xml(
-        "data/preibisch_3d/grid-3d-stitched-h5/dataset.xml"
-    )
+    #    coords = load_coords_from_bdv_xml(
+    #        "data/preibisch_3d/grid-3d-stitched-h5/dataset.xml"
+    #    )
 
     # repopulate the dataset as list of dask array
     data = []
-    for _, yx in dataset.groups():
-        for _, x in yx.groups():
-            array = da.from_zarr(x["raw"])
-            if False:
-                # DEBUG force load data in memory
-                array = np.array(array)
-            data.append(array)
+    for _, zyx in dataset.groups():
+        for _, yx in zyx.groups():
+            for _, x in yx.groups():
+                array = da.from_zarr(x["raw"])
+                if False:
+                    # DEBUG force load data in memory
+                    array = np.array(array)
+                data.append(array)
+
     # create stitcher
     layout = Layout.from_coords(coords)
     collection = TileCollection(layout, data)
