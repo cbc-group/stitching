@@ -66,7 +66,7 @@ def convert_to_zarr(src_dir, dst_dir=None, overwrite=None):
                 raise FileExistsError(dst_dir)
             else:
                 writeback = False
-                # open as read-only
+                # return as read-only
                 logger.info(f"load existing dataset")
                 dataset = zarr.open(dst_dir, mode="r")
 
@@ -99,11 +99,15 @@ def convert_to_zarr(src_dir, dst_dir=None, overwrite=None):
     coords = pd.DataFrame(coords, columns=["z", "y", "x"], dtype=np.float32)
     print(coords)
 
+    # Data ready for existing zarr source and no overwrite.
+    if len(tasks) == 0:
+        return coords,dataset
+
     # use active workers to determine batch size
     client = Client.current()
     batch_size = len(client.ncores())
 
-    def worker(set_precentage, log_text):
+    def worker(set_percentage, log_text):
         n_completed, n_failed = 0, 0
         for i in range(0, len(tasks), batch_size):
             futures = [client.compute(task) for task in tasks[i : i + batch_size]]
@@ -114,73 +118,75 @@ def convert_to_zarr(src_dir, dst_dir=None, overwrite=None):
                     n_failed += 1
                     logger.exception(f"{n_failed} failed task(s)")
                 else:
-                    set_precentage((n_completed + n_failed) / len(tasks))
+                    n_completed += 1
+                    set_percentage((n_completed + n_failed) / len(tasks))
 
     progress_dialog(text="Convert to Zarr", run_callback=worker).run()
 
-    return coords, dataset
+    return coords,dataset
 
 
-def load_coords_from_bdv_xml(xml_path):
-    """
-    Preibisch's dataset recorded in BDV XML format, all coordinates are calibrated to 
-    isotropic microns. This function restore them back to voxel unit.
-    """
-    tree = ET.parse(xml_path)
-    root = tree.getroot()
-
-    setup = next(root.iter("ViewSetup"))
-    voxel_size = setup.find("voxelSize").find("size").text
-    voxel_size = [float(value) for value in voxel_size.split(" ")]
-    voxel_size = np.array(voxel_size, dtype=np.float32)
-
-    # since transform matrix is isotropic, we divide it by the smallest voxel dimension
-    voxel_size = voxel_size[0]
-    logger.info(f"voxel size {voxel_size} um")
-
-    # we only need these transform matrix
-    transform_list = ["Stitching Transform", "Translation to Regular Grid"]
-
-    coords = []
-    for transforms in root.iter("ViewRegistration"):
-        matrix = np.identity(4, dtype=np.float32)
-        for transform in transforms.iter("ViewTransform"):
-            # determine types
-            name = transform.find("Name").text
-
-            if name not in transform_list:
-                continue
-
-            # extract array
-            values = transform.find("affine").text
-            values = [float(value) for value in values.split(" ")] + [0, 0, 0, 1]
-            values = np.array(values, dtype=np.float32).reshape((4, 4))
-
-            # accumulate
-            matrix = np.matmul(matrix, values)
-
-        # shift vector is the last column (F-order)
-        shift = matrix[:-1, -1]
-
-        # TODO z dimension is upsampled, divide it?
-
-        # save it as list in order to batch convert later
-        coords.append(shift)
-    # there are 3 channels, we use the first one
-    coords = coords[:6]
-
-    # as pandas dataframe
-    coords = pd.DataFrame(coords, columns=["x", "y", "z"], dtype=np.float32)
-    print(coords)
-
-    return coords
+# def load_coords_from_bdv_xml(xml_path):
+#     """
+#     Preibisch's dataset recorded in BDV XML format, all coordinates are calibrated to 
+#     isotropic microns. This function restore them back to voxel unit.
+#     """
+#     tree = ET.parse(xml_path)
+#     root = tree.getroot()
+# 
+#     setup = next(root.iter("ViewSetup"))
+#     voxel_size = setup.find("voxelSize").find("size").text
+#     voxel_size = [float(value) for value in voxel_size.split(" ")]
+#     voxel_size = np.array(voxel_size, dtype=np.float32)
+# 
+#     # since transform matrix is isotropic, we divide it by the smallest voxel dimension
+#     voxel_size = voxel_size[0]
+#     logger.info(f"voxel size {voxel_size} um")
+# 
+#     # we only need these transform matrix
+#     transform_list = ["Stitching Transform", "Translation to Regular Grid"]
+# 
+#     coords = []
+#     for transforms in root.iter("ViewRegistration"):
+#         matrix = np.identity(4, dtype=np.float32)
+#         for transform in transforms.iter("ViewTransform"):
+#             # determine types
+#             name = transform.find("Name").text
+# 
+#             if name not in transform_list:
+#                 continue
+# 
+#             # extract array
+#             values = transform.find("affine").text
+#             values = [float(value) for value in values.split(" ")] + [0, 0, 0, 1]
+#             values = np.array(values, dtype=np.float32).reshape((4, 4))
+# 
+#             # accumulate
+#             matrix = np.matmul(matrix, values)
+# 
+#         # shift vector is the last column (F-order)
+#         shift = matrix[:-1, -1]
+# 
+#         # TODO z dimension is upsampled, divide it?
+# 
+#         # save it as list in order to batch convert later
+#         coords.append(shift)
+#     # there are 3 channels, we use the first one
+#     coords = coords[:6]
+# 
+#     # as pandas dataframe
+#     coords = pd.DataFrame(coords, columns=["x", "y", "z"], dtype=np.float32)
+#     print(coords)
+# 
+#     return coords
 
 
 def main():
     # load zarr dataset
     src_dir = "/home2/rescue/stitch/run/data/demo_3D_2x2x2_CMTKG-V3"
     try:
-        # DEBUG force read-only (overwrite=False)
+        # dataset = convert_to_zarr(src_dir)
+        # DEBUG force read-only
         coords, dataset = convert_to_zarr(src_dir, overwrite=False)
     except FileExistsError as err:
         overwrite = yes_no_dialog(
@@ -190,9 +196,9 @@ def main():
         coords, dataset = convert_to_zarr(src_dir, overwrite=overwrite)
 
     # load coordinates
-    #    coords = load_coords_from_bdv_xml(
-    #        "data/preibisch_3d/grid-3d-stitched-h5/dataset.xml"
-    #    )
+#    coords = load_coords_from_bdv_xml(
+#        "data/preibisch_3d/grid-3d-stitched-h5/dataset.xml"
+#    )
 
     # repopulate the dataset as list of dask array
     data = []
@@ -218,7 +224,7 @@ def main():
     dst_dir = os.path.join(parent, dname)
 
     # execute
-    stitcher.fuse(dst_dir, overwrite=True)  # TODO why chunk shape
+    stitcher.fuse(dst_dir)
 
 
 if __name__ == "__main__":

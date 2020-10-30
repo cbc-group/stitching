@@ -121,6 +121,7 @@ def convert_to_zarr(src_dir, dst_dir=None, overwrite=None):
                     n_failed += 1
                     logger.exception(f"{n_failed} failed task(s)")
                 else:
+                    n_completed += 1
                     set_precentage((n_completed + n_failed) / len(tasks))
 
     progress_dialog(text="Convert to Zarr", run_callback=worker).run()

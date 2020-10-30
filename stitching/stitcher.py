@@ -112,14 +112,17 @@ class Stitcher(object):
 
     def fuse(self, dst_dir, overwrite=False):
         vol_shape = self.collection.bounding_box
+        first_tile_index = sorted(list(self.collection.layout.indices))[0]
+        first_tile = self.collection[first_tile_index]
 
         # create zarr directory store
         mode = "w" if overwrite else "w-"
+        # TODO add compression
         dst_arr = zarr.open(
             dst_dir,
             mode=mode,
             shape=vol_shape,
-            dtype=np.uint8,  # TODO infer dtype from tiles  # TODO add compression
+            dtype=first_tile.data.dtype
         )
 
         """
@@ -458,8 +461,8 @@ class Stitcher(object):
             return result
 
         res_tile = da.map_overlap(
-            resample_block,
             data,
+            resample_block,
             dtype=data.dtype,
             depth=1,
             boundary="nearest",
@@ -474,8 +477,8 @@ class Stitcher(object):
 
         origin = self.collection.origin
         coord0, res_tile = self._resample_tile(tile)
-
-        origin, shape = np.array(origin), np.array(tile.shape)
+        origin, shape = np.array(origin), np.array(tile.data.shape)
+        dtype = dst_arr.dtype
 
         # build sampler
         sampler_start = coord0 - origin
@@ -483,66 +486,65 @@ class Stitcher(object):
         sampler = tuple(
             slice(start, stop) for start, stop in zip(sampler_start, sampler_stop)
         )
+        dst_arr[sampler] = res_tile.compute().astype(dtype)
 
-        dst_arr[sampler] = res_tile.compute().astype(np.uint8)  # DEBUG
-
-    def _fuse_tile_0(self, dst_arr, tile: Tile):
-        chunk_shape = tile.data.chunksize
-
-        data = tile.data
-        dshape = data.shape
-        coord0 = tile.coord
-        logger.debug(
-            f"fuse tile: index={tile.index}, dshape={dshape}, chunk_shape={chunk_shape}, coord={coord0}"
-        )
-
-        # Partition the whole tile into chunks.
-        chunk_mesh = np.meshgrid(
-            *tuple(
-                np.arange(x, x + L, Lc) for x, L, Lc in zip(coord0, dshape, chunk_shape)
-            )
-        )
-        chunks_x0 = [pt for pt in zip(*(x.flat for x in chunk_mesh))]
-
-        for chunk_x0 in chunks_x0:
-            cx0 = tuple((np.array(chunk_x0) - np.array(coord0)).astype(int))
-            cshape = [
-                L - xc if xc + Lc > L else Lc
-                for xc, Lc, L in zip(cx0, chunk_shape, dshape)
-            ]
-            axes_mesh0 = [
-                np.linspace(xc, xc + Lc - 1, Lc) for xc, Lc in zip(chunk_x0, cshape)
-            ]
-            if len(cshape) == 2:
-                chunk_data = data[
-                    cx0[0] : cx0[0] + cshape[0], cx0[1] : cx0[1] + cshape[1]
-                ]
-            else:
-                chunk_data = data[
-                    cx0[0] : cx0[0] + cshape[0],
-                    cx0[1] : cx0[1] + cshape[1],
-                    cx0[2] : cx0[2] + cshape[2],
-                ]
-            fusefunc = RegularGridInterpolator(
-                axes_mesh0, chunk_data, bounds_error=False, fill_value=None
-            )
-
-            chunk_x1 = tuple(np.round(x) for x in chunk_x0)
-            cx1 = tuple(np.array(chunk_x1).astype(int))
-            mesh1 = np.meshgrid(
-                *tuple(np.linspace(x, x + L - 1, L) for x, L in zip(chunk_x1, cshape)),
-                indexing="ij",
-            )
-            pts1 = fusefunc([pt for pt in zip(*(x.flat for x in mesh1))])
-            pts1[pts1 < 0] = 0
-            pts1 = np.round(pts1).astype(np.uint16).reshape(cshape)
-            if len(cshape) == 2:
-                dst_arr[cx1[0] : cx1[0] + cshape[0], cx1[1] : cx1[1] + cshape[1]] = pts1
-            else:
-                dst_arr[
-                    cx1[0] : cx1[0] + cshape[0],
-                    cx1[1] : cx1[1] + cshape[1],
-                    cx1[2] : cx1[2] + cshape[2],
-                ] = pts1
-
+#    def _fuse_tile_0(self, dst_arr, tile: Tile):
+#        chunk_shape = tile.data.chunksize
+#
+#        data = tile.data
+#        dshape = data.shape
+#        coord0 = tile.coord
+#        logger.debug(
+#            f"fuse (tile): index={tile.index}, dshape={dshape}, chunk_shape={chunk_shape}, coord={coord0}"
+#        )
+#
+#        # Partition the whole tile into chunks.
+#        chunk_mesh = np.meshgrid(
+#            *tuple(
+#                np.arange(x, x + L, Lc) for x, L, Lc in zip(coord0, dshape, chunk_shape)
+#            )
+#        )
+#        chunks_x0 = [pt for pt in zip(*(x.flat for x in chunk_mesh))]
+#
+#        for chunk_x0 in chunks_x0:
+#            cx0 = tuple((np.array(chunk_x0) - np.array(coord0)).astype(int))
+#            cshape = [
+#                L - xc if xc + Lc > L else Lc
+#                for xc, Lc, L in zip(cx0, chunk_shape, dshape)
+#            ]
+#            axes_mesh0 = [
+#                np.linspace(xc, xc + Lc - 1, Lc) for xc, Lc in zip(chunk_x0, cshape)
+#            ]
+#            if len(cshape) == 2:
+#                chunk_data = data[
+#                    cx0[0] : cx0[0] + cshape[0], cx0[1] : cx0[1] + cshape[1]
+#                ]
+#            else:
+#                chunk_data = data[
+#                    cx0[0] : cx0[0] + cshape[0],
+#                    cx0[1] : cx0[1] + cshape[1],
+#                    cx0[2] : cx0[2] + cshape[2],
+#                ]
+#            fusefunc = RegularGridInterpolator(
+#                axes_mesh0, chunk_data, bounds_error=False, fill_value=None
+#            )
+#
+#            chunk_x1 = tuple(np.round(x) for x in chunk_x0)
+#            cx1 = tuple(np.array(chunk_x1).astype(int))
+#            mesh1 = np.meshgrid(
+#                *tuple(np.linspace(x, x + L - 1, L) for x, L in zip(chunk_x1, cshape)),
+#                indexing="ij",
+#            )
+#            pts1 = fusefunc([pt for pt in zip(*(x.flat for x in mesh1))])
+#            pts1[pts1 < 0] = 0
+#            pts1 = np.round(pts1).astype(np.uint16).reshape(cshape)
+#            if len(cshape) == 2:
+#                dst_arr[cx1[0] : cx1[0] + cshape[0], cx1[1] : cx1[1] + cshape[1]] = pts1
+#            else:
+#                dst_arr[
+#                    cx1[0] : cx1[0] + cshape[0],
+#                    cx1[1] : cx1[1] + cshape[1],
+#                    cx1[2] : cx1[2] + cshape[2],
+#                ] = pts1
+#
     ##
